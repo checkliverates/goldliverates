@@ -138,7 +138,105 @@ return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="v
 @media(max-width:820px){body{padding:10px 7px}.header{height:auto;min-height:126px}.brand-title{font-size:34px}.main{grid-template-columns:1fr}.datetime{width:210px}}
 @media(max-width:600px){.header-datetime-only{min-height:78px;height:78px;flex-direction:row;align-items:center;justify-content:space-between;padding:9px 15px}.header-datetime-only .datetime{width:100%;min-width:0;padding:0}.header-datetime-only .date{font-size:20px;color:#fff}.header-datetime-only .time{font-size:11px;margin-top:4px;color:#fff}.header-datetime-only .hkflag{width:20px;height:14px;margin-right:5px}.header{margin:10px 7px;padding:11px;min-height:150px;flex-direction:column;align-items:stretch;gap:8px}.brand{justify-content:center;gap:10px}.brand-icon{width:62px;height:62px}.gold-mark-large{width:62px;height:62px}.gold-mark-large:before{inset:6px}.gold-mark-large:after{font-size:9px}.gold-mark-large .bar,.gold-mark-large .purity{display:none}.brand-title{font-size:25px;letter-spacing:-.5px}.brand-sub{display:none}.datetime{width:100%;padding:8px}.date{font-size:15px}.time{font-size:12px}.main{margin:0 7px;gap:10px}.cardbar{height:55px;padding:0 12px}.gold-heading{font-size:18px}.small-gold{width:43px;height:43px}.rates-inner{padding:10px}.thead{grid-template-columns:1fr 125px;padding:0 12px;font-size:12px}.quote-row{grid-template-columns:1fr 125px;min-height:69px;padding:8px 11px}.product-wrap{gap:9px}.product-icon{width:42px;height:42px}.product-icon .gold-mark{display:none}.product{font-size:13px}.prices{font-size:20px;gap:6px}.rate-arrow{font-size:16px}.rules-title{height:55px;font-size:17px;padding:0 12px}.info{width:34px;height:34px;font-size:19px}.rule{grid-template-columns:38px 1fr;gap:8px;padding:11px 0}.rule-num{width:35px;height:35px;font-size:12px}.rule p{font-size:11px;line-height:1.48}.bottom-art{height:70px}.skyline{width:75%;height:56px}}
 @media(max-width:390px){.brand-title{font-size:23px}.brand-sub{font-size:10px}.product{font-size:12px}.prices{font-size:18px}.thead,.quote-row{grid-template-columns:1fr 112px}.header-datetime-only{min-height:66px;height:66px}.header-datetime-only .date{font-size:20px}.header-datetime-only .time{font-size:11px}}
-</style></style></head><body><div class="page"><div class="shell">
+</style>
+/* FINAL DATE/TIME PRESENTATION */
+.header.header-datetime-only{
+  height:96px!important;
+  min-height:96px!important;
+  margin:12px 14px 13px!important;
+  padding:8px 14px!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  background:linear-gradient(135deg,#0758b2 0%,#0788e6 100%)!important;
+  border-radius:13px!important;
+}
+.header.header-datetime-only .datetime{
+  width:auto!important;
+  min-width:190px!important;
+  padding:8px 22px!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:0!important;
+  background:rgba(255,255,255,.10)!important;
+  border:1px solid rgba(255,255,255,.28)!important;
+  border-radius:12px!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 4px 12px rgba(0,45,100,.12)!important;
+}
+.header.header-datetime-only .date{
+  font-size:27px!important;
+  line-height:1.05!important;
+  font-weight:800!important;
+  letter-spacing:.15px!important;
+  text-align:center!important;
+  color:#fff!important;
+}
+.header.header-datetime-only .time{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  font-size:13px!important;
+  line-height:1.05!important;
+  font-weight:700!important;
+  margin-top:6px!important;
+  white-space:nowrap!important;
+  color:#fff!important;
+}
+.header.header-datetime-only .hkflag{
+  width:18px!important;
+  height:13px!important;
+  margin-right:5px!important;
+}
+
+/* Mobile: compact premium date/time card */
+@media(max-width:600px){
+  .header.header-datetime-only{
+    height:84px!important;
+    min-height:84px!important;
+    margin:8px 5px 10px!important;
+    padding:6px 9px!important;
+    border-radius:11px!important;
+  }
+  .header.header-datetime-only .datetime{
+    min-width:0!important;
+    width:auto!important;
+    padding:7px 18px!important;
+    border-radius:10px!important;
+  }
+  .header.header-datetime-only .date{
+    font-size:23px!important;
+    line-height:1.02!important;
+  }
+  .header.header-datetime-only .time{
+    font-size:12px!important;
+    margin-top:5px!important;
+    line-height:1.02!important;
+  }
+  .header.header-datetime-only .hkflag{
+    width:17px!important;
+    height:12px!important;
+    margin-right:5px!important;
+  }
+}
+@media(max-width:390px){
+  .header.header-datetime-only{
+    height:76px!important;
+    min-height:76px!important;
+  }
+  .header.header-datetime-only .datetime{
+    padding:6px 15px!important;
+  }
+  .header.header-datetime-only .date{
+    font-size:21px!important;
+  }
+  .header.header-datetime-only .time{
+    font-size:11px!important;
+  }
+}
+</style></head><body><div class="page"><div class="shell">
 <header class="header header-datetime-only"><div class="datetime"><div id="date" class="date">--</div><div class="time"><svg class="hkflag" viewBox="0 0 24 17"><rect width="24" height="17" rx="2" fill="#DE2910"/><path d="M8.4 4.7c-1.9-1-3.7.5-3 2.2.45 1.1 1.7 1.5 2.8.8-1.15.15-1.85-.7-1.55-1.45.28-.67 1.08-.94 1.75-.86Z" fill="#fff"/><circle cx="9.2" cy="5.5" r=".6" fill="#fff"/><circle cx="7.4" cy="4.2" r=".6" fill="#fff"/><circle cx="6.2" cy="6.7" r=".6" fill="#fff"/><circle cx="8.8" cy="7.8" r=".6" fill="#fff"/></svg><span id="time">--:--:-- -- HKT</span></div></div></header>
 <main class="main"><section class="card"><div class="cardbar"><div class="gold-heading"><div class="small-gold"><div class="gold-mark" aria-hidden="true"><span class="bar bar-a"></span><span class="bar bar-b"></span><span class="bar bar-c"></span><span class="purity">999.9</span></div></div><span>Gold (999.9)</span></div><div class="trend">⌁</div></div><div class="rates-inner"><div class="thead"><div>Product</div><div>USD Rate / Gram</div></div><div id="rows"></div></div></section>
 <section class="card"><div class="rules-title"><span class="info">i</span><span>Booking Rules / Notes</span></div><div class="rules-body"><div class="rule"><span class="rule-num">01</span><p>After checking the live rate, whenever you're ready to confirm a booking, you must write down the <b>required grams</b>.</p></div><div class="rule"><span class="rule-num">02</span><p>Once you send the grams, we will reply with <b>"OK"</b> at that same time, confirming your booking is being processed at that exact moment.</p></div><div class="rule"><span class="rule-num">03</span><p>Right after confirmation, we will send you a <b>screenshot of the rate</b>.</p></div><div class="rule"><span class="rule-num">04</span><p>If your booking is urgent, please <b>call us directly</b> to alert us at the time of booking — WhatsApp messages may sometimes be missed or delayed, so a call ensures immediate confirmation.</p></div></div></section></main>
