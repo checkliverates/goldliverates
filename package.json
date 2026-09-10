@@ -1,8 +1,12 @@
 {
-  "name": "checkliverates-9999",
+  "name": "checkliverates-relay",
   "version": "1.0.0",
   "private": true,
   "main": "server.js",
-  "scripts": {"start":"node server.js"},
-  "dependencies": {"socket.io-client":"2.5.0"}
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "socket.io-client": "2.5.0"
+  }
 }
