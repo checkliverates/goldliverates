@@ -11,6 +11,7 @@ const TOKEN = process.env.WFBULLION_TOKEN || "";
 // Markup is NEVER sent to the browser.
 // ============================================================
 const PRODUCTS = [
+  { label: "37.799 Grams (1 Tael)",  markup: 20.00 },  
   { label: "75 - 199 Grams",  markup: 17.00 },
   { label: "200 - 399 Grams", markup: 12.00 },
   { label: "400 - 999 Grams", markup:  9.00 },
