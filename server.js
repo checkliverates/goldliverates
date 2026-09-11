@@ -27,7 +27,8 @@ let latest = {
   gramSourceAsk: null,
   hkdSell: null,
   updatedAt: null,
-  connected: false
+  connected: false,
+  marketDirection: "same"
 };
 
 function sendJson(res, data, status = 200) {
@@ -80,8 +81,8 @@ const server = http.createServer((req, res) => {
     return sendJson(res, {
       ok:true,
       connected:latest.connected,
-      bid:latest.bid,
       rows,
+      marketDirection:latest.marketDirection,
       updatedAt:latest.updatedAt
     });
   }
@@ -122,8 +123,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (url.pathname === "/") {
-    res.writeHead(200,{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store"});
-    return res.end(page());
+    return sendJson(res, { ok:true, service:"price-api" });
   }
 
   res.writeHead(404,{"Content-Type":"text/plain; charset=utf-8"});
@@ -157,7 +157,7 @@ function startUpstream(){
   console.log("[RELAY] Token present: YES");
   const socket=io(WF_SERVER+"/bquote",{transports:["polling","websocket"],query:{token:TOKEN},reconnection:true,reconnectionAttempts:Infinity,reconnectionDelay:1000,reconnectionDelayMax:5000,timeout:15000,rejectUnauthorized:false,extraHeaders:{Origin:"https://www.wfbullion.com",Referer:"https://www.wfbullion.com/en-us"}});
   socket.on("connect",()=>{latest.connected=true;console.log("[RELAY] WFBullion CONNECTED");console.log("[RELAY] Socket ID: "+socket.id)});
-  socket.on("quote.realtime",data=>{const products=data&&data.products;if(!products)return;const xau=products["XAU="];let gramProduct=null;for(const [key,p] of Object.entries(products)){const vals=[key,p&&p.id,p&&p.mf_id,p&&p.prod_code,p&&p.name&&p.name.enUS];if(vals.some(v=>v!=null&&String(v).toLowerCase().replace(/[^a-z0-9]/g,"")==="p1kkgg")){gramProduct=p;break}}if(xau){const bid=parseFloat(xau.sell);if(Number.isFinite(bid))latest.bid=bid}if(gramProduct){const ask=parseFloat(gramProduct.sell);if(Number.isFinite(ask))latest.gramSourceAsk=ask}const hkdProduct=products["HKD="];if(hkdProduct){const hkdSell=parseFloat(hkdProduct.sell);if(Number.isFinite(hkdSell))latest.hkdSell=hkdSell}if(latest.bid!==null)latest.updatedAt=new Date().toISOString()});
+  socket.on("quote.realtime",data=>{const products=data&&data.products;if(!products)return;const xau=products["XAU="];let gramProduct=null;for(const [key,p] of Object.entries(products)){const vals=[key,p&&p.id,p&&p.mf_id,p&&p.prod_code,p&&p.name&&p.name.enUS];if(vals.some(v=>v!=null&&String(v).toLowerCase().replace(/[^a-z0-9]/g,"")==="p1kkgg")){gramProduct=p;break}}if(xau){const bid=parseFloat(xau.sell);if(Number.isFinite(bid)){if(latest.bid!==null){if(bid>latest.bid)latest.marketDirection="up";else if(bid<latest.bid)latest.marketDirection="down";else latest.marketDirection="same"}latest.bid=bid}}if(gramProduct){const ask=parseFloat(gramProduct.sell);if(Number.isFinite(ask))latest.gramSourceAsk=ask}const hkdProduct=products["HKD="];if(hkdProduct){const hkdSell=parseFloat(hkdProduct.sell);if(Number.isFinite(hkdSell))latest.hkdSell=hkdSell}if(latest.bid!==null)latest.updatedAt=new Date().toISOString()});
   socket.on("disconnect",reason=>{latest.connected=false;console.log("[RELAY] WFBullion DISCONNECTED: "+reason)});
   socket.on("connect_error",e=>{latest.connected=false;console.log("[RELAY] WFBullion CONNECT_ERROR: "+e.message)});
 }
