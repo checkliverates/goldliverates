@@ -19,9 +19,10 @@ const PRODUCTS = [
 ];
 
 // The "1 Tael" row is its own calculation, separate from the PRODUCTS
-// bracket rows above: TRUNCATE((LLG ASK + TAEL_MARKUP) / 31.1035, 2),
-// then that USD rate/gram (and its HKD equivalent) are each multiplied
-// by grams-per-tael.
+// bracket rows above, but uses the same LLG selling price (latest.bid):
+// TRUNCATE((LLG selling price + TAEL_MARKUP) / 31.1035, 2), then that
+// USD rate/gram (and its HKD equivalent) are each multiplied by
+// grams-per-tael.
 const TAEL_GRAMS = 37.429;
 const TAEL_MARKUP = 20.00;
 
@@ -30,7 +31,6 @@ const ADMIN_STATE = PRODUCTS.map(p => ({ label: p.label, markup: p.markup }));
 
 let latest = {
   bid: null,
-  llgAsk: null,
   gramSourceAsk: null,
   hkdSell: null,
   updatedAt: null,
@@ -60,12 +60,13 @@ function calculateRows() {
     return { index: i, label: p.label, rate, hkdRate };
   });
 
-  // "1 Tael" row: TRUNCATE((LLG ASK + TAEL_MARKUP) / 31.1035, 2) for the
-  // USD rate/gram, same base rate carried into the HKD side, then both
-  // multiplied by TAEL_GRAMS. Placed on top. Independent of the PRODUCTS
-  // bracket rows above (those use LLG BID).
-  const taelBaseRate = latest.llgAsk !== null
-    ? truncate2((latest.llgAsk + TAEL_MARKUP) / 31.1035)
+  // "1 Tael" row: TRUNCATE((LLG selling price + TAEL_MARKUP) / 31.1035, 2)
+  // for the USD rate/gram, same base rate carried into the HKD side, then
+  // both multiplied by TAEL_GRAMS. Placed on top. Uses the same selling
+  // price (latest.bid, sourced from xau.sell) as every other row below —
+  // just its own markup (TAEL_MARKUP) and its own tael conversion.
+  const taelBaseRate = latest.bid !== null
+    ? truncate2((latest.bid + TAEL_MARKUP) / 31.1035)
     : null;
   const taelBaseHkdRate = taelBaseRate !== null && latest.hkdSell !== null
     ? truncate2(taelBaseRate * latest.hkdSell)
@@ -95,7 +96,7 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
 
   if (url.pathname === "/health") {
-    return sendJson(res, { ok:true, upstreamConnected:latest.connected, tokenPresent:Boolean(TOKEN), bidAvailable:latest.bid !== null, askAvailable:latest.llgAsk !== null });
+    return sendJson(res, { ok:true, upstreamConnected:latest.connected, tokenPresent:Boolean(TOKEN), bidAvailable:latest.bid !== null });
   }
 
   if (url.pathname === "/api/price") {
@@ -183,7 +184,7 @@ function startUpstream(){
   console.log("[RELAY] Token present: YES");
   const socket=io(WF_SERVER+"/bquote",{transports:["polling","websocket"],query:{token:TOKEN},reconnection:true,reconnectionAttempts:Infinity,reconnectionDelay:1000,reconnectionDelayMax:5000,timeout:15000,rejectUnauthorized:false,extraHeaders:{Origin:"https://www.wfbullion.com",Referer:"https://www.wfbullion.com/en-us"}});
   socket.on("connect",()=>{latest.connected=true;console.log("[RELAY] WFBullion CONNECTED");console.log("[RELAY] Socket ID: "+socket.id)});
-  socket.on("quote.realtime",data=>{const products=data&&data.products;if(!products)return;const xau=products["XAU="];let gramProduct=null;for(const [key,p] of Object.entries(products)){const vals=[key,p&&p.id,p&&p.mf_id,p&&p.prod_code,p&&p.name&&p.name.enUS];if(vals.some(v=>v!=null&&String(v).toLowerCase().replace(/[^a-z0-9]/g,"")==="p1kkgg")){gramProduct=p;break}}if(xau){const bid=parseFloat(xau.sell);if(Number.isFinite(bid)){if(latest.bid!==null){if(bid>latest.bid)latest.marketDirection="up";else if(bid<latest.bid)latest.marketDirection="down";else latest.marketDirection="same"}latest.bid=bid}const ask=parseFloat(xau.buy);if(Number.isFinite(ask))latest.llgAsk=ask}if(gramProduct){const ask=parseFloat(gramProduct.sell);if(Number.isFinite(ask))latest.gramSourceAsk=ask}const hkdProduct=products["HKD="];if(hkdProduct){const hkdSell=parseFloat(hkdProduct.sell);if(Number.isFinite(hkdSell))latest.hkdSell=hkdSell}if(latest.bid!==null)latest.updatedAt=new Date().toISOString()});
+  socket.on("quote.realtime",data=>{const products=data&&data.products;if(!products)return;const xau=products["XAU="];let gramProduct=null;for(const [key,p] of Object.entries(products)){const vals=[key,p&&p.id,p&&p.mf_id,p&&p.prod_code,p&&p.name&&p.name.enUS];if(vals.some(v=>v!=null&&String(v).toLowerCase().replace(/[^a-z0-9]/g,"")==="p1kkgg")){gramProduct=p;break}}if(xau){const bid=parseFloat(xau.sell);if(Number.isFinite(bid)){if(latest.bid!==null){if(bid>latest.bid)latest.marketDirection="up";else if(bid<latest.bid)latest.marketDirection="down";else latest.marketDirection="same"}latest.bid=bid}}if(gramProduct){const ask=parseFloat(gramProduct.sell);if(Number.isFinite(ask))latest.gramSourceAsk=ask}const hkdProduct=products["HKD="];if(hkdProduct){const hkdSell=parseFloat(hkdProduct.sell);if(Number.isFinite(hkdSell))latest.hkdSell=hkdSell}if(latest.bid!==null)latest.updatedAt=new Date().toISOString()});
   socket.on("disconnect",reason=>{latest.connected=false;console.log("[RELAY] WFBullion DISCONNECTED: "+reason)});
   socket.on("connect_error",e=>{latest.connected=false;console.log("[RELAY] WFBullion CONNECT_ERROR: "+e.message)});
 }
