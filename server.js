@@ -12,11 +12,16 @@ const TOKEN = process.env.WFBULLION_TOKEN || "";
 // ============================================================
 const PRODUCTS = [
   { label: "75 - 199 Grams",  markup: 17.00 },
-  { label: "200 - 399 Grams", markup: 13.00 },
-  { label: "400 - 999 Grams", markup:  11.00 },
-  { label: "1000 Grams",      markup:  9.00 },
+  { label: "200 - 399 Grams", markup: 12.00 },
+  { label: "400 - 999 Grams", markup:  9.00 },
+  { label: "1000 Grams",      markup:  5.00 },
   { label: "",                markup:  0.00 }
 ];
+
+// The "1 Tael" row is not its own markup product. It is always derived from
+// the "75 - 199 Grams" row above: take that row's already-calculated
+// USD rate/gram and HKD rate/gram and multiply both by grams-per-tael.
+const TAEL_GRAMS = 37.429;
 
 const ADMIN_KEY = process.env.ADMIN_KEY || "";
 const ADMIN_STATE = PRODUCTS.map(p => ({ label: p.label, markup: p.markup }));
@@ -45,12 +50,24 @@ function truncate2(n) {
 
 function calculateRows() {
   if (latest.bid === null) return [];
-  return ADMIN_STATE.map((p, i) => {
+  const rows = ADMIN_STATE.map((p, i) => {
     if (!p.label) return { index: i, label: "", rate: null, hkdRate: null };
     const rate = truncate2((latest.bid + Number(p.markup)) / 31.1035);
     const hkdRate = latest.hkdSell !== null ? truncate2(rate * latest.hkdSell) : null;
     return { index: i, label: p.label, rate, hkdRate };
   });
+
+  // "1 Tael" row: derived from the "75 - 199 Grams" row (rows[0]) by
+  // multiplying both already-rounded values by TAEL_GRAMS. Placed on top.
+  const refRow = rows[0];
+  const taelRow = {
+    index: -1,
+    label: "1 Tael",
+    rate: refRow && refRow.rate !== null ? truncate2(refRow.rate * TAEL_GRAMS) : null,
+    hkdRate: refRow && refRow.hkdRate !== null ? truncate2(refRow.hkdRate * TAEL_GRAMS) : null
+  };
+
+  return [taelRow, ...rows];
 }
 
 function adminPage() {
