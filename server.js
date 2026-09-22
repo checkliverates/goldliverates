@@ -19,9 +19,11 @@ const PRODUCTS = [
 ];
 
 // The "1 Tael" row is not its own markup product. It is always derived from
-// the "75 - 199 Grams" row above: take that row's already-calculated
-// USD rate/gram and HKD rate/gram and multiply both by grams-per-tael.
+// the "75 - 199 Grams" row above: take that row's USD rate/gram, add an
+// extra per-gram markup just for this row, then multiply both the USD and
+// HKD side by grams-per-tael.
 const TAEL_GRAMS = 37.429;
+const TAEL_EXTRA_MARKUP = 0.20;
 
 const ADMIN_KEY = process.env.ADMIN_KEY || "";
 const ADMIN_STATE = PRODUCTS.map(p => ({ label: p.label, markup: p.markup }));
@@ -57,14 +59,21 @@ function calculateRows() {
     return { index: i, label: p.label, rate, hkdRate };
   });
 
-  // "1 Tael" row: derived from the "75 - 199 Grams" row (rows[0]) by
-  // multiplying both already-rounded values by TAEL_GRAMS. Placed on top.
+  // "1 Tael" row: derived from the "75 - 199 Grams" row (rows[0]).
+  // Add TAEL_EXTRA_MARKUP to that row's USD rate/gram first, then
+  // multiply both the USD and HKD side by TAEL_GRAMS. Placed on top.
   const refRow = rows[0];
+  const taelBaseRate = refRow && refRow.rate !== null
+    ? truncate2(refRow.rate + TAEL_EXTRA_MARKUP)
+    : null;
+  const taelBaseHkdRate = taelBaseRate !== null && latest.hkdSell !== null
+    ? truncate2(taelBaseRate * latest.hkdSell)
+    : null;
   const taelRow = {
     index: -1,
     label: "1 Tael",
-    rate: refRow && refRow.rate !== null ? truncate2(refRow.rate * TAEL_GRAMS) : null,
-    hkdRate: refRow && refRow.hkdRate !== null ? truncate2(refRow.hkdRate * TAEL_GRAMS) : null
+    rate: taelBaseRate !== null ? truncate2(taelBaseRate * TAEL_GRAMS) : null,
+    hkdRate: taelBaseHkdRate !== null ? truncate2(taelBaseHkdRate * TAEL_GRAMS) : null
   };
 
   return [taelRow, ...rows];
