@@ -23,7 +23,7 @@ const PRODUCTS = [
 // extra per-gram markup just for this row, then multiply both the USD and
 // HKD side by grams-per-tael.
 const TAEL_GRAMS = 37.429;
-const TAEL_EXTRA_MARKUP = 0.20;
+const TAEL_EXTRA_MARKUP = 20.00;
 
 const ADMIN_KEY = process.env.ADMIN_KEY || "";
 const ADMIN_STATE = PRODUCTS.map(p => ({ label: p.label, markup: p.markup }));
