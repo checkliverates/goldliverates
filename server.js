@@ -44,19 +44,18 @@ const PRODUCTS = [
 ];
 
 const LINKS = [
-  { id: "link1", label: "LINK_1" },
-  { id: "link2", label: "LINK_2" },
-  { id: "link3", label: "LINK_3" },
-  { id: "link4", label: "LINK_4" },
-  { id: "link5", label: "LINK_5" }
+  { id: "link1", label: "D1" },
+  { id: "link2", label: "T2" },
+  { id: "link3", label: "M3" },
+  { id: "link4", label: "C4" }
 ];
 
 const MARKUPS = {
-  "tael":     { link1: 20.00, link2: 21.00, link3: 19.00, link4: 22.00, link5: 20.50 },
-  "p75-199":  { link1: 17.00, link2: 18.00, link3: 16.00, link4: 19.00, link5: 17.50 },
-  "p200-399": { link1: 12.00, link2: 13.00, link3: 11.00, link4: 14.00, link5: 12.50 },
-  "p400-999": { link1:  9.00, link2: 10.00, link3:  8.00, link4: 11.00, link5:  9.50 },
-  "p1000":    { link1:  5.00, link2:  6.00, link3:  4.00, link4:  7.00, link5:  5.50 }
+  "tael":     { link1: 20.00, link2: 21.00, link3: 19.00, link4: 22.00},
+  "p75-199":  { link1: 17.00, link2: 18.00, link3: 16.00, link4: 19.00},
+  "p200-399": { link1: 12.00, link2: 13.00, link3: 11.00, link4: 14.00},
+  "p400-999": { link1:  9.00, link2: 10.00, link3:  8.00, link4: 11.00},
+  "p1000":    { link1:  5.00, link2:  6.00, link3:  4.00, link4:  7.00}
 };
 
 let latest = {
