@@ -44,19 +44,19 @@ const PRODUCTS = [
 ];
 
 const LINKS = [
-  { id: "link1", label: "LINK_1" },
-  { id: "link2", label: "LINK_2" },
-  { id: "link3", label: "LINK_3" },
-  { id: "link4", label: "LINK_4" },
-  { id: "link5", label: "LINK_5" }
+  { id: "DH1", label: "DH1" },
+  { id: "2CT", label: "2CT" },
+  { id: "G3R", label: "G3R" },
+  { id: "C4F", label: "C4F" },
+  { id: "LM5", label: "LM5" }
 ];
 
 const MARKUPS = {
-  "tael":     { link1: 20.00, link2: 21.00, link3: 19.00, link4: 22.00, link5: 20.50 },
-  "p75-199":  { link1: 17.00, link2: 18.00, link3: 16.00, link4: 19.00, link5: 17.50 },
-  "p200-399": { link1: 12.00, link2: 13.00, link3: 11.00, link4: 14.00, link5: 12.50 },
-  "p400-999": { link1:  9.00, link2: 10.00, link3:  8.00, link4: 11.00, link5:  9.50 },
-  "p1000":    { link1:  5.00, link2:  6.00, link3:  4.00, link4:  7.00, link5:  5.50 }
+  "tael":     { DH1: 20.00, 2CT: 21.00, G3R: 19.00, C4F: 22.00, LM5: 20.50 },
+  "p75-199":  { DH1: 17.00, 2CT: 18.00, G3R: 16.00, C4F: 19.00, LM5: 17.50 },
+  "p200-399": { DH1: 12.00, 2CT: 13.00, G3R: 11.00, C4F: 14.00, LM5: 12.50 },
+  "p400-999": { DH1:  9.00, 2CT: 10.00, G3R:  8.00, C4F: 11.00, LM5:  9.50 },
+  "p1000":    { DH1:  5.00, 2CT:  6.00, G3R:  4.00, C4F:  7.00, LM5:  5.50 }
 };
 
 let latest = {
