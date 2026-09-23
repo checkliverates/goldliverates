@@ -4,30 +4,60 @@ const io = require("socket.io-client");
 const PORT = process.env.PORT || 10000;
 const WF_SERVER = "https://quote.wfgroup.com.hk:8083";
 const TOKEN = process.env.WFBULLION_TOKEN || "";
+const ADMIN_KEY = process.env.ADMIN_KEY || "";
+
+// Used only to print shareable client-link URLs on the /admin page.
+// Set FRONTEND_URL in Render Environment Variables if your static site
+// ever moves to a different domain.
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://gold-live-rates.onrender.com";
 
 // ============================================================
-// PRODUCT / MARKUP SETTINGS
-// Change these values when you want to change daily markups.
-// Markup is NEVER sent to the browser.
+// PRODUCT ROWS  x  CLIENT LINKS  x  MARKUPS
+// ------------------------------------------------------------
+// PRODUCTS: the rows of the table. unitMultiplier converts the
+//   per-gram rate into whatever unit that row displays:
+//     1       -> per gram (e.g. "75 - 199 Grams")
+//     37.429  -> per tael (e.g. "1 Tael")
+//   New rows (e.g. a future "gram size" row) just need a label
+//   and a unitMultiplier — no other code changes needed.
+//
+// LINKS: your client categories. Each link is shared as:
+//   FRONTEND_URL + "/?link=" + link.id
+//   There is always an implicit "main" link (id reserved, not
+//   listed here) that always uses 0.00 markup on every row:
+//   FRONTEND_URL + "/"  (no ?link param, or an unrecognized one)
+//
+// MARKUPS: MARKUPS[productId][linkId] = markup added (in USD,
+//   per gram) before dividing by 31.1035. Never sent to the browser.
+//
+// All three of these can also be edited live from /admin — this is
+// just the starting/default data.
 // ============================================================
+const MAIN_LINK_ID = "main";
+
 const PRODUCTS = [
-  { label: "75 - 199 Grams",  markup: 17.00 },
-  { label: "200 - 399 Grams", markup: 12.00 },
-  { label: "400 - 999 Grams", markup:  9.00 },
-  { label: "1000 Grams",      markup:  5.00 },
-  { label: "",                markup:  0.00 }
+  { id: "tael",      label: "1 Tael",           unitMultiplier: 37.429 },
+  { id: "p75-199",   label: "75 - 199 Grams",   unitMultiplier: 1 },
+  { id: "p200-399",  label: "200 - 399 Grams",  unitMultiplier: 1 },
+  { id: "p400-999",  label: "400 - 999 Grams",  unitMultiplier: 1 },
+  { id: "p1000",     label: "1000 Grams",       unitMultiplier: 1 }
 ];
 
-// The "1 Tael" row is its own calculation, separate from the PRODUCTS
-// bracket rows above, but uses the same LLG selling price (latest.bid):
-// TRUNCATE((LLG selling price + TAEL_MARKUP) / 31.1035, 2), then that
-// USD rate/gram (and its HKD equivalent) are each multiplied by
-// grams-per-tael.
-const TAEL_GRAMS = 37.429;
-const TAEL_MARKUP = 20.00;
+const LINKS = [
+  { id: "link1", label: "LINK_1" },
+  { id: "link2", label: "LINK_2" },
+  { id: "link3", label: "LINK_3" },
+  { id: "link4", label: "LINK_4" },
+  { id: "link5", label: "LINK_5" }
+];
 
-const ADMIN_KEY = process.env.ADMIN_KEY || "";
-const ADMIN_STATE = PRODUCTS.map(p => ({ label: p.label, markup: p.markup }));
+const MARKUPS = {
+  "tael":     { link1: 20.00, link2: 21.00, link3: 19.00, link4: 22.00, link5: 20.50 },
+  "p75-199":  { link1: 17.00, link2: 18.00, link3: 16.00, link4: 19.00, link5: 17.50 },
+  "p200-399": { link1: 12.00, link2: 13.00, link3: 11.00, link4: 14.00, link5: 12.50 },
+  "p400-999": { link1:  9.00, link2: 10.00, link3:  8.00, link4: 11.00, link5:  9.50 },
+  "p1000":    { link1:  5.00, link2:  6.00, link3:  4.00, link4:  7.00, link5:  5.50 }
+};
 
 let latest = {
   bid: null,
@@ -51,52 +81,202 @@ function truncate2(n) {
   return Math.trunc((n + Number.EPSILON) * 100) / 100;
 }
 
-function calculateRows() {
+// TRUNCATE((LLG selling price + row markup) / 31.1035, 2) for the base
+// per-gram USD rate, same base rate used for the HKD side. Rows with
+// unitMultiplier 1 (every gram-bracket row) stop there, truncated exactly
+// once - identical to the original per-row formula. Rows with a different
+// unitMultiplier (e.g. 37.429 for "1 Tael") multiply that already-truncated
+// base rate and truncate a second time, matching the confirmed Tael formula
+// exactly. The "main" link always uses markup 0.
+function calculateRows(linkId) {
   if (latest.bid === null) return [];
-  const rows = ADMIN_STATE.map((p, i) => {
-    if (!p.label) return { index: i, label: "", rate: null, hkdRate: null };
-    const rate = truncate2((latest.bid + Number(p.markup)) / 31.1035);
-    const hkdRate = latest.hkdSell !== null ? truncate2(rate * latest.hkdSell) : null;
-    return { index: i, label: p.label, rate, hkdRate };
+  const isMain = linkId === MAIN_LINK_ID;
+  return PRODUCTS.map(p => {
+    const markup = isMain ? 0 : Number((MARKUPS[p.id] && MARKUPS[p.id][linkId]) || 0);
+    const multiplier = Number(p.unitMultiplier) || 1;
+    const baseRate = truncate2((latest.bid + markup) / 31.1035);
+    const baseHkd = latest.hkdSell !== null ? truncate2(baseRate * latest.hkdSell) : null;
+    // Only re-truncate when there's an actual conversion to do — re-running
+    // truncate2 on a value that's already truncated can shave a cent off
+    // due to floating-point rounding, so multiplier===1 rows skip it.
+    const rate = multiplier === 1 ? baseRate : truncate2(baseRate * multiplier);
+    const hkdRate = baseHkd === null ? null : (multiplier === 1 ? baseHkd : truncate2(baseHkd * multiplier));
+    return { id: p.id, label: p.label, rate, hkdRate };
   });
+}
 
-  // "1 Tael" row: TRUNCATE((LLG selling price + TAEL_MARKUP) / 31.1035, 2)
-  // for the USD rate/gram, same base rate carried into the HKD side, then
-  // both multiplied by TAEL_GRAMS. Placed on top. Uses the same selling
-  // price (latest.bid, sourced from xau.sell) as every other row below —
-  // just its own markup (TAEL_MARKUP) and its own tael conversion.
-  const taelBaseRate = latest.bid !== null
-    ? truncate2((latest.bid + TAEL_MARKUP) / 31.1035)
-    : null;
-  const taelBaseHkdRate = taelBaseRate !== null && latest.hkdSell !== null
-    ? truncate2(taelBaseRate * latest.hkdSell)
-    : null;
-  const taelRow = {
-    index: -1,
-    label: "1 Tael",
-    rate: taelBaseRate !== null ? truncate2(taelBaseRate * TAEL_GRAMS) : null,
-    hkdRate: taelBaseHkdRate !== null ? truncate2(taelBaseHkdRate * TAEL_GRAMS) : null
-  };
-
-  return [taelRow, ...rows];
+function resolveLinkId(raw) {
+  if (!raw) return MAIN_LINK_ID;
+  return LINKS.some(l => l.id === raw) ? raw : MAIN_LINK_ID;
 }
 
 function adminPage() {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Markup Settings</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<style>body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:#f5f5f5;margin:0;padding:30px}.box{max-width:650px;margin:auto;background:#fff;border:1px solid #c59a22;border-radius:18px;padding:25px;box-shadow:0 10px 28px rgba(0,0,0,.08)}h1{margin-top:0}.row{display:grid;grid-template-columns:1fr 150px;gap:12px;margin:12px 0}.row input{padding:12px;border:1px solid #ccc;border-radius:8px;font-size:16px}button{margin-top:15px;padding:12px 22px;border:0;border-radius:9px;background:#c59a22;color:#fff;font-weight:700;font-size:16px;cursor:pointer}.msg{margin-top:15px;font-weight:700}.lightning,.bolt,.zap,.lightning-symbol{display:none!important}
+<style>
+*{box-sizing:border-box}
+body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:#f5f5f5;margin:0;padding:24px 14px 60px;color:#1a2b3c}
+.wrap{max-width:1200px;margin:auto}
+h1{margin:0 0 4px}
+.sub{color:#5c6b7a;margin:0 0 22px;font-size:14px}
+.panel{background:#fff;border:1px solid #e3d8b8;border-radius:16px;padding:20px;box-shadow:0 10px 28px rgba(0,0,0,.06);margin-bottom:20px;overflow-x:auto}
+.mainlink{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:14px}
+.mainlink code{background:#f0f4f8;padding:6px 10px;border-radius:8px;font-size:13px}
+table{border-collapse:collapse;width:100%;min-width:760px}
+th,td{border:1px solid #e2e8ee;padding:8px;text-align:left;vertical-align:top}
+th{background:#0b69bf;color:#fff;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+input[type=text],input[type=number]{width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:14px;box-sizing:border-box}
+.rowlabelcell{min-width:190px}
+.linkcell{min-width:170px}
+.linkurl{font-size:11px;color:#5c6b7a;word-break:break-all;margin-top:6px}
+.del{background:#e05260;color:#fff;border:0;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;margin-top:8px}
+.addbtn{background:#0b69bf;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;margin:6px 10px 0 0}
+.savebtn{background:#c59a22;color:#fff;border:0;border-radius:9px;padding:12px 22px;font-weight:700;font-size:16px;cursor:pointer;margin-top:16px}
+.msg{margin-top:14px;font-weight:700}
+.hint{font-size:11px;color:#8a97a6;margin-top:6px}
+</style></head><body><div class="wrap">
+<h1>Markup Settings</h1>
+<p class="sub">Edit product rows, client links and each link's markup below, then Save All Changes. Markups never appear on any client-facing page.</p>
+<div class="panel">
+<div class="mainlink"><b>Main link (always 0.00 markup, not editable here):</b> <code id="mainUrl">-</code></div>
+</div>
+<div class="panel">
+<div id="tableWrap">Loading&hellip;</div>
+<button class="addbtn" onclick="addRow()" type="button">+ Add Product Row</button>
+<button class="addbtn" onclick="addLink()" type="button">+ Add Client Link</button>
+<br><button class="savebtn" onclick="save()" type="button">Save All Changes</button>
+<div id="msg" class="msg"></div>
+</div>
+</div>
+<script>
+var STATE={products:[],links:[],markups:{},frontendUrl:""};
+var URL_KEY = new URLSearchParams(location.search).get("key") || "";
 
-@media(max-width:600px){.header.header-datetime-only{margin:8px 5px 10px!important;padding:0 12px!important;height:82px!important;min-height:82px!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;border-radius:11px!important}.header.header-datetime-only .datetime{width:auto!important;min-width:0!important;padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important}.header.header-datetime-only .date{font-size:27px!important;line-height:1!important;font-weight:800!important;color:#fff!important}.header.header-datetime-only .time{font-size:12px!important;line-height:1!important;margin-top:6px!important;color:#fff!important}.header.header-datetime-only .hkflag{width:19px!important;height:13px!important;margin-right:5px!important}.main{margin:0 5px!important;gap:9px!important}.cardbar{height:52px!important}.small-gold{width:44px!important;height:42px!important}.gold-mark{width:39px!important;height:32px!important}.gold-mark:before{left:4px!important;top:6px!important;width:30px!important;height:18px!important}.gold-mark:after{left:19px!important;top:15px!important;font-size:5.5px!important}.gold-heading{font-size:17px!important;gap:8px!important}.product-icon{width:42px!important;height:42px!important}.product-icon:after{font-size:6.5px!important}.product-wrap{gap:9px!important}.product{font-size:13px!important}.prices{font-size:19px!important}.rate-arrow{font-size:15px!important}.thead,.quote-row{grid-template-columns:1fr 112px!important}}
-@media(max-width:390px){.header.header-datetime-only{height:76px!important;min-height:76px!important}.header.header-datetime-only .date{font-size:25px!important}.header.header-datetime-only .time{font-size:11px!important}.product-icon{width:39px!important;height:39px!important}.product{font-size:12px!important}.prices{font-size:18px!important}.thead,.quote-row{grid-template-columns:1fr 105px!important}}
-</style></head><body><div class="box"><h1>Daily Markup Settings</h1><p>These values stay on the server and are not displayed on the client price page.</p><div id="rows"></div><button onclick="save()">Save Markup</button><div id="msg" class="msg"></div></div>
-<script>async function load(){const r=await fetch('/admin/data');const d=await r.json();document.getElementById('rows').innerHTML=d.products.map((p,i)=>'<div class="row"><input id="l'+i+'" value="'+String(p.label).replaceAll('"','&quot;')+'"><input id="m'+i+'" type="number" step="0.01" value="'+p.markup+'"></div>').join('')}async function save(){const products=Array.from({length:5},(_,i)=>({label:document.getElementById('l'+i).value,markup:Number(document.getElementById('m'+i).value)}));const key=prompt('Enter ADMIN_KEY');if(key===null)return;const r=await fetch('/admin/save',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':key},body:JSON.stringify({products})});const d=await r.json();document.getElementById('msg').textContent=d.message||'Saved';}load();</script></body></html>`;
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+function slugify(s){var v=String(s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");return v||"item";}
+function uniqueId(base,taken){var id=slugify(base),n=1;while(taken.indexOf(id)>=0){n++;id=slugify(base)+"-"+n;}return id;}
+
+function render(){
+  document.getElementById("mainUrl").textContent = STATE.frontendUrl + "/";
+  var html = "<table><thead><tr><th>Product Row</th><th>Unit &times; (1 = gram, 37.429 = tael)</th>";
+  STATE.links.forEach(function(l,li){
+    html += "<th class='linkcell'>" +
+      "<input type='text' value='"+esc(l.label)+"' onchange='setLinkLabel("+li+",this.value)'>" +
+      "<div class='linkurl'>"+esc(STATE.frontendUrl)+"/?link="+esc(l.id)+"</div>" +
+      "<input type='text' value='"+esc(l.id)+"' class='hint' style='margin-top:6px' onchange='setLinkId("+li+",this.value)'>" +
+      "<button class='del' type='button' onclick='removeLink("+li+")'>Delete Link</button>" +
+      "</th>";
+  });
+  html += "</tr></thead><tbody>";
+  STATE.products.forEach(function(p,pi){
+    html += "<tr><td class='rowlabelcell'>" +
+      "<input type='text' value='"+esc(p.label)+"' onchange='setProductLabel("+pi+",this.value)'>" +
+      "<button class='del' type='button' onclick='removeRow("+pi+")'>Delete Row</button>" +
+      "</td><td><input type='number' step='0.001' value='"+p.unitMultiplier+"' onchange='setProductMultiplier("+pi+",this.value)'></td>";
+    STATE.links.forEach(function(l){
+      var v = (STATE.markups[p.id] && STATE.markups[p.id][l.id] !== undefined) ? STATE.markups[p.id][l.id] : 0;
+      html += "<td><input type='number' step='0.01' value='"+v+"' onchange='setMarkup(\\""+p.id+"\\",\\""+l.id+"\\",this.value)'></td>";
+    });
+    html += "</tr>";
+  });
+  html += "</tbody></table>";
+  document.getElementById("tableWrap").innerHTML = html;
+}
+
+function setProductLabel(i,v){STATE.products[i].label=v;}
+function setProductMultiplier(i,v){STATE.products[i].unitMultiplier=Number(v)||1;}
+function setLinkLabel(i,v){STATE.links[i].label=v;render();}
+function setLinkId(i,v){
+  var taken = STATE.links.filter(function(_,idx){return idx!==i;}).map(function(l){return l.id;}).concat(["main"]);
+  var oldId = STATE.links[i].id;
+  var newId = uniqueId(v, taken);
+  STATE.links[i].id = newId;
+  Object.keys(STATE.markups).forEach(function(pid){
+    if(STATE.markups[pid] && Object.prototype.hasOwnProperty.call(STATE.markups[pid], oldId)){
+      STATE.markups[pid][newId] = STATE.markups[pid][oldId];
+      if(newId!==oldId) delete STATE.markups[pid][oldId];
+    }
+  });
+  render();
+}
+function setMarkup(pid,lid,v){
+  if(!STATE.markups[pid]) STATE.markups[pid]={};
+  STATE.markups[pid][lid]=Number(v)||0;
+}
+
+function addRow(){
+  var label = prompt("New row label (e.g. 2000 Grams):");
+  if(label===null || !label.trim()) return;
+  var existingIds = STATE.products.map(function(p){return p.id;});
+  var id = uniqueId(label, existingIds);
+  STATE.products.push({id:id,label:label.trim(),unitMultiplier:1});
+  STATE.markups[id]={};
+  STATE.links.forEach(function(l){STATE.markups[id][l.id]=0;});
+  render();
+}
+function removeRow(i){
+  if(!confirm("Delete this row?")) return;
+  var id = STATE.products[i].id;
+  STATE.products.splice(i,1);
+  delete STATE.markups[id];
+  render();
+}
+function addLink(){
+  var label = prompt("New client link name (e.g. LINK_6):");
+  if(label===null || !label.trim()) return;
+  var existingIds = STATE.links.map(function(l){return l.id;}).concat(["main"]);
+  var id = uniqueId(label, existingIds);
+  STATE.links.push({id:id,label:label.trim()});
+  STATE.products.forEach(function(p){
+    if(!STATE.markups[p.id]) STATE.markups[p.id]={};
+    STATE.markups[p.id][id]=0;
+  });
+  render();
+}
+function removeLink(i){
+  if(!confirm("Delete this link? Its shared URL will stop giving marked-up rates.")) return;
+  var id = STATE.links[i].id;
+  STATE.links.splice(i,1);
+  Object.keys(STATE.markups).forEach(function(pid){ if(STATE.markups[pid]) delete STATE.markups[pid][id]; });
+  render();
+}
+
+async function load(){
+  var r = await fetch("/admin/data", { headers: URL_KEY ? {"x-admin-key":URL_KEY} : {} });
+  if(r.status===401){ document.getElementById("tableWrap").innerHTML="Unauthorized. Open this page as <code>/admin?key=YOUR_ADMIN_KEY</code>."; return; }
+  var d = await r.json();
+  if(!d.ok){ document.getElementById("tableWrap").textContent="Failed to load."; return; }
+  STATE.products = d.products;
+  STATE.links = d.links;
+  STATE.markups = d.markups;
+  STATE.frontendUrl = d.frontendUrl;
+  render();
+}
+
+async function save(){
+  var key = URL_KEY || prompt("Enter ADMIN_KEY");
+  if(key===null || key==="") return;
+  var r = await fetch("/admin/save", {
+    method:"POST",
+    headers:{"Content-Type":"application/json","x-admin-key":key},
+    body: JSON.stringify({products:STATE.products, links:STATE.links, markups:STATE.markups})
+  });
+  var d = await r.json();
+  var msg = document.getElementById("msg");
+  msg.textContent = d.message || (d.ok?"Saved.":"Failed.");
+  msg.style.color = d.ok ? "#0d8a56" : "#c23246";
+  if(d.ok) load();
+}
+
+load();
+</script></body></html>`;
 }
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
 
   if (url.pathname === "/health") {
-    return sendJson(res, { ok:true, upstreamConnected:latest.connected, tokenPresent:Boolean(TOKEN), bidAvailable:latest.bid !== null });
+    return sendJson(res, { ok:true, upstreamConnected:latest.connected, tokenPresent:Boolean(TOKEN), bidAvailable:latest.bid !== null, linksConfigured:LINKS.length });
   }
 
   if (url.pathname === "/api/price") {
@@ -104,10 +284,12 @@ const server = http.createServer((req, res) => {
       return sendJson(res, { ok:false, connected:latest.connected });
     }
 
-    const rows = calculateRows();
+    const linkId = resolveLinkId(url.searchParams.get("link"));
+    const rows = calculateRows(linkId);
     return sendJson(res, {
       ok:true,
       connected:latest.connected,
+      link:linkId,
       rows,
       marketDirection:latest.marketDirection,
       updatedAt:latest.updatedAt
@@ -119,32 +301,84 @@ const server = http.createServer((req, res) => {
       res.writeHead(503, {"Content-Type":"text/plain; charset=utf-8"});
       return res.end("Admin is disabled. Set ADMIN_KEY in Render Environment Variables.");
     }
+    if (url.searchParams.get("key") !== ADMIN_KEY) {
+      res.writeHead(401, {"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"});
+      return res.end("Unauthorized. Open this page as /admin?key=YOUR_ADMIN_KEY");
+    }
     res.writeHead(200,{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store"});
     return res.end(adminPage());
   }
 
   if (url.pathname === "/admin/data") {
-    if (!ADMIN_KEY) return sendJson(res,{ok:false},503);
-    return sendJson(res,{ok:true,products:ADMIN_STATE});
+    // Requires the same x-admin-key header as /admin/save. Without this
+    // check, anyone who finds this URL could read every link's markup
+    // without ever knowing ADMIN_KEY.
+    if (!ADMIN_KEY || req.headers["x-admin-key"] !== ADMIN_KEY) return sendJson(res,{ok:false,message:"Unauthorized"},401);
+    return sendJson(res,{ ok:true, products:PRODUCTS, links:LINKS, markups:MARKUPS, frontendUrl:FRONTEND_URL });
   }
 
   if (url.pathname === "/admin/save" && req.method === "POST") {
     if (!ADMIN_KEY || req.headers["x-admin-key"] !== ADMIN_KEY) return sendJson(res,{ok:false,message:"Unauthorized"},401);
-    let body="";
-    req.on("data", chunk => { body += chunk; if(body.length > 100000) req.destroy(); });
+    let body = "";
+    req.on("data", chunk => { body += chunk; if (body.length > 300000) req.destroy(); });
     req.on("end", () => {
       try {
-        const parsed=JSON.parse(body);
-        if(!Array.isArray(parsed.products) || parsed.products.length !== 5) throw new Error("Invalid products");
-        parsed.products.forEach((p,i)=>{
-          const label=String(p.label || "").trim().slice(0,60);
-          const markup=Number(p.markup);
-          if(!Number.isFinite(markup) || markup < -10000 || markup > 10000) throw new Error("Invalid markup at row "+(i+1));
-          ADMIN_STATE[i].label=label;
-          ADMIN_STATE[i].markup=markup;
+        const parsed = JSON.parse(body);
+        if (!Array.isArray(parsed.products) || parsed.products.length < 1 || parsed.products.length > 40) {
+          throw new Error("Invalid products (need 1-40 rows)");
+        }
+        if (!Array.isArray(parsed.links) || parsed.links.length > 40) {
+          throw new Error("Invalid links (max 40)");
+        }
+
+        const seenProductIds = new Set();
+        const newProducts = parsed.products.map((p, i) => {
+          const id = String(p.id || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 40);
+          const label = String(p.label || "").trim().slice(0, 80);
+          const unitMultiplier = Number(p.unitMultiplier);
+          if (!id) throw new Error("Row " + (i + 1) + " is missing an id");
+          if (seenProductIds.has(id)) throw new Error("Duplicate row id: " + id);
+          seenProductIds.add(id);
+          if (!label) throw new Error("Row " + (i + 1) + " is missing a label");
+          if (!Number.isFinite(unitMultiplier) || unitMultiplier <= 0 || unitMultiplier > 100000) {
+            throw new Error("Row " + (i + 1) + " has an invalid unit multiplier");
+          }
+          return { id, label, unitMultiplier };
         });
-        return sendJson(res,{ok:true,message:"Saved. Markups are active now. Note: Render restarts reset in-memory changes; for permanent daily settings update PRODUCTS in server.js or Render Environment Variables."});
-      } catch(e) { return sendJson(res,{ok:false,message:e.message},400); }
+
+        const seenLinkIds = new Set(["main"]);
+        const newLinks = parsed.links.map((l, i) => {
+          const id = String(l.id || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 40);
+          const label = String(l.label || "").trim().slice(0, 60);
+          if (!id) throw new Error("Link " + (i + 1) + " is missing an id");
+          if (id === "main") throw new Error("'main' is reserved and cannot be used as a link id");
+          if (seenLinkIds.has(id)) throw new Error("Duplicate link id: " + id);
+          seenLinkIds.add(id);
+          if (!label) throw new Error("Link " + (i + 1) + " is missing a label");
+          return { id, label };
+        });
+
+        const newMarkups = {};
+        newProducts.forEach(p => {
+          newMarkups[p.id] = {};
+          newLinks.forEach(l => {
+            const raw = (parsed.markups && parsed.markups[p.id] && parsed.markups[p.id][l.id] !== undefined)
+              ? parsed.markups[p.id][l.id] : 0;
+            const markup = Number(raw);
+            if (!Number.isFinite(markup) || markup < -100000 || markup > 100000) {
+              throw new Error("Invalid markup for " + p.id + " / " + l.id);
+            }
+            newMarkups[p.id][l.id] = markup;
+          });
+        });
+
+        PRODUCTS.length = 0; PRODUCTS.push(...newProducts);
+        LINKS.length = 0; LINKS.push(...newLinks);
+        Object.keys(MARKUPS).forEach(k => delete MARKUPS[k]);
+        Object.assign(MARKUPS, newMarkups);
+
+        return sendJson(res, { ok:true, message: "Saved. " + newLinks.length + " link(s) and " + newProducts.length + " row(s) active now. Note: Render restarts reset in-memory changes." });
+      } catch (e) { return sendJson(res, { ok:false, message:e.message }, 400); }
     });
     return;
   }
@@ -157,27 +391,6 @@ const server = http.createServer((req, res) => {
   res.end("Not found");
 });
 
-function page() {
-return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b67c2"><title>Live Gold Rates</title><link rel="icon" href="data:,">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<style>
-:root{--bg:#eef6ff;--panel:#ffffff;--panel2:#f7fbff;--line:#d9e9f8;--muted:#6480a0;--text:#0b3f7a;--gold:#d99b1f;--gold2:#f0bd4b;--green:#19a974;--red:#e05260;--blue:#0757a6;--blue2:#1684df;--shadow:0 24px 65px rgba(22,91,153,.14)}
-*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:radial-gradient(1000px 560px at 6% -10%,rgba(24,132,223,.22),transparent 60%),radial-gradient(900px 520px at 108% 4%,rgba(11,105,191,.18),transparent 58%),radial-gradient(760px 460px at 46% 118%,rgba(80,174,240,.16),transparent 62%),linear-gradient(160deg,#eaf5ff 0%,#dcecff 45%,#eef6ff 100%);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}body{padding:24px 14px 40px;overflow-x:hidden}.page{width:min(1120px,100%);margin:auto}.shell{position:relative;overflow:hidden;border:1px solid rgba(11,105,191,.22);border-radius:28px;background:linear-gradient(90deg,#f0bd4b 0%,#1a8ce2 50%,#0b69bf 100%) top/100% 4px no-repeat,linear-gradient(145deg,rgba(255,255,255,.99),rgba(242,249,255,.99));box-shadow:0 34px 80px rgba(11,90,170,.2),0 0 0 1px rgba(255,255,255,.5) inset}.shell:before{content:"";position:absolute;width:480px;height:480px;right:-220px;top:-240px;border-radius:50%;background:radial-gradient(circle,rgba(24,132,223,.14),transparent 67%);pointer-events:none}.shell:after{content:"";position:absolute;width:400px;height:400px;left:-230px;bottom:-250px;border-radius:50%;background:radial-gradient(circle,rgba(80,174,240,.14),transparent 68%);pointer-events:none}
-.header{position:relative;margin:18px;min-height:150px;padding:28px 30px;border:1px solid #c7e1f7;border-radius:22px;background:linear-gradient(135deg,#0752a0 0%,#0b69bf 52%,#1a8ce2 100%);display:flex;align-items:center;justify-content:space-between;gap:24px;overflow:hidden;box-shadow:0 14px 34px rgba(10,92,166,.18)}.header:after{content:"999.9";position:absolute;right:-12px;bottom:-44px;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:150px;font-weight:700;letter-spacing:-8px;color:rgba(255,255,255,.075);pointer-events:none}.datetime{position:relative;z-index:1}.date{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:42px;line-height:1;font-weight:700;letter-spacing:-1.5px;color:#fff;text-shadow:0 3px 10px rgba(4,40,80,.22)}.time{margin-top:10px;display:flex;align-items:center;gap:7px;font-size:14px;font-weight:600;color:rgba(255,255,255,.86);letter-spacing:.3px}.hkflag{width:22px;height:15px;flex:none;border-radius:3px;box-shadow:0 0 0 1px rgba(255,255,255,.24)}
-.market-status{position:relative;z-index:2;display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid rgba(255,255,255,.28);border-radius:999px;background:rgba(255,255,255,.14);color:#fff;font-size:12px;font-weight:700;backdrop-filter:blur(8px)}.status-dot{width:8px;height:8px;border-radius:50%;background:#42e69d;box-shadow:0 0 0 5px rgba(66,230,157,.12),0 0 14px rgba(66,230,157,.55);animation:pulseDot 1.8s ease-in-out infinite}@keyframes pulseDot{0%,100%{box-shadow:0 0 0 5px rgba(66,230,157,.12),0 0 14px rgba(66,230,157,.55)}50%{box-shadow:0 0 0 8px rgba(66,230,157,.18),0 0 20px rgba(66,230,157,.8)}}
-.main{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(310px,.75fr);gap:18px;margin:0 18px}.card{border:1px solid #cfe4f7;border-radius:22px;background:linear-gradient(90deg,#f0bd4b 0%,#1a8ce2 55%,#0b69bf 100%) top/100% 3px no-repeat,linear-gradient(145deg,#ffffff 0%,#f8fcff 100%);box-shadow:0 18px 46px rgba(11,90,170,.15);overflow:hidden;transition:transform .3s ease,box-shadow .3s ease}.card:hover{transform:translateY(-3px);box-shadow:0 24px 54px rgba(11,90,170,.2)}.cardbar{height:76px;padding:0 22px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);background:linear-gradient(90deg,#f1f8ff,transparent)}.gold-heading{display:flex;align-items:center;gap:13px;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:20px;font-weight:700;color:#0a4688}.small-gold{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;border:2px solid #e8bd55;background:radial-gradient(circle at 30% 25%,#fff7c9 0%,#f8d76e 24%,#d99b22 58%,#9a5f08 100%);box-shadow:inset 0 2px 2px rgba(255,255,255,.92),inset 0 -3px 4px rgba(117,67,4,.35),0 7px 16px rgba(180,125,22,.18)}.gold-mark{position:relative;width:40px;height:40px;border-radius:50%;background:radial-gradient(circle at 35% 28%,#fff4b8 0%,#f0c85c 35%,#c98717 72%,#8f5607 100%);border:2px solid rgba(255,244,177,.8);box-shadow:inset 0 1px 2px rgba(255,255,255,.8),inset 0 -2px 3px rgba(96,54,2,.32),0 3px 7px rgba(117,67,4,.2);display:grid;place-items:center;overflow:hidden}.gold-mark:before{content:"";position:absolute;inset:5px;border:1px solid rgba(255,242,167,.78);border-radius:50%;box-shadow:inset 0 0 0 1px rgba(137,82,7,.28)}.gold-mark:after{content:"999.9";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#8a5709;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:8px;font-weight:800;letter-spacing:.2px;text-shadow:0 1px rgba(255,238,160,.8);z-index:2}.trend{width:34px;height:34px;border:1px solid #cce2f7;border-radius:10px;display:grid;place-items:center;color:var(--blue2);font-size:20px;background:#f1f8ff}
-.rates-inner{padding:0 12px 12px}.rates-only{padding-top:2px}.thead{display:grid;grid-template-columns:1fr 155px 140px;gap:12px;padding:16px 14px;margin:10px 0 8px;color:rgba(255,255,255,.92);font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.65px;background:linear-gradient(135deg,#0752a0 0%,#0b69bf 52%,#1a8ce2 100%);border:1px solid #0a5aa8;border-radius:14px;box-shadow:0 10px 22px rgba(11,105,191,.22)}.thead div:not(:first-child){text-align:right}.quote-row{display:grid;grid-template-columns:1fr 155px 140px;align-items:center;min-height:76px;padding:9px 12px;margin:7px 0;border:1px solid #e0edf8;border-radius:15px;background:#f8fbfe;box-shadow:inset 4px 0 0 0 transparent;transition:.2s ease,box-shadow .2s ease}.quote-row:nth-child(even){background:#f3f9ff}.quote-row:hover{border-color:#acd2f1;background:#f0f8ff;transform:translateY(-1px);box-shadow:0 7px 18px rgba(24,132,223,.08),inset 4px 0 0 0 #1a8ce2}.quote-row:hover .product-icon{box-shadow:0 6px 14px rgba(180,125,22,.12),0 0 0 4px rgba(217,155,31,.14)}.product-wrap{display:flex;align-items:center;gap:12px;min-width:0}.product-icon{width:50px;height:50px;flex:none;display:grid;place-items:center;border-radius:50%;background:linear-gradient(145deg,#fffaf0,#f5d477);border:1px solid rgba(217,155,31,.32);box-shadow:0 6px 14px rgba(180,125,22,.12);transition:box-shadow .25s ease}.product-icon .gold-mark{transform:scale(.9)}.product{min-width:0;color:#164f8e;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.prices{display:flex;align-items:center;justify-content:flex-end;gap:8px;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:24px;font-weight:700;letter-spacing:-.6px;color:#083f7d;font-variant-numeric:tabular-nums lining-nums}.rate-arrow{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none;font-family:Arial;font-size:11px;font-weight:800}.rate-arrow.up{color:#0d8a56;background:rgba(25,169,116,.14)}.rate-arrow.down{color:#c23246;background:rgba(224,82,96,.14)}.same{color:#7d98b5}.hkd-rate{display:flex;align-items:center;justify-content:flex-end;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:14px;font-weight:400;letter-spacing:-.3px;color:#0b3f7a;font-variant-numeric:tabular-nums lining-nums}
-.rules-title{height:76px;padding:0 22px;display:flex;align-items:center;gap:12px;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:21px;font-weight:700;color:#fff;background:linear-gradient(135deg,#0752a0 0%,#0b69bf 52%,#1a8ce2 100%);border-top-left-radius:21px;border-top-right-radius:21px;box-shadow:0 10px 22px rgba(11,105,191,.22)}.info{width:36px;height:36px;display:grid;place-items:center;border-radius:11px;border:1px solid rgba(255,255,255,.32);background:rgba(255,255,255,.16);color:#fff;font:700 19px Georgia;backdrop-filter:blur(6px)}.rules-body{padding:8px 20px 12px}.rule{display:grid;grid-template-columns:40px 1fr;gap:12px;padding:17px 0;border-bottom:1px solid var(--line);transition:.2s ease}.rule:hover{background:#f5faff}.rule:last-child{border-bottom:0}.rule-num{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;background:linear-gradient(135deg,#eaf5ff,#dcecfb);border:1px solid #c6e2f7;color:#0b69b8;font-size:11.5px;font-weight:800;box-shadow:0 2px 6px rgba(11,105,191,.1)}.rule p{margin:1px 0 0;color:#5f7897;font-size:12.5px;line-height:1.62}.rule b{color:#164f8e;font-weight:700}.bottom-art{height:100px;position:relative;overflow:hidden}.bottom-art:before{content:"";position:absolute;left:5%;right:5%;top:55px;height:1px;background:linear-gradient(90deg,transparent,#b8d8f2,transparent)}
-@media(max-width:850px){body{padding:12px 8px 28px}.header{min-height:125px;padding:23px}.date{font-size:33px}.main{grid-template-columns:1fr}.market-status{position:absolute;right:18px;bottom:18px}.header:after{font-size:115px}.bottom-art{height:55px}}
-@media(max-width:600px){body{padding:7px 5px 18px}.shell{border-radius:19px}.header{margin:8px;min-height:108px;padding:18px 17px;border-radius:16px}.date{font-size:27px;letter-spacing:-1px}.time{font-size:10px;margin-top:7px}.hkflag{width:19px;height:13px}.market-status{right:14px;bottom:14px;padding:7px 10px;font-size:10px}.status-dot{width:6px;height:6px}.main{margin:0 8px;gap:10px}.card{border-radius:16px}.cardbar{height:62px;padding:0 13px}.gold-heading{font-size:17px;gap:9px}.small-gold{width:43px;height:43px;border-radius:50%}.trend{width:30px;height:30px}.rates-inner{padding:0 7px 7px}.thead{grid-template-columns:1fr 108px 96px;gap:6px;padding:11px 8px;margin:7px 0 6px;font-size:8.5px;letter-spacing:.35px;border-radius:11px}.quote-row{grid-template-columns:1fr 108px 96px;gap:6px;min-height:64px;padding:7px 8px;margin:5px 0;border-radius:12px}.product-wrap{gap:8px}.product-icon{width:40px;height:40px;border-radius:50%}.product-icon .gold-mark{transform:scale(.78)}.product{font-size:12px}.prices{font-size:19px;gap:6px}.rate-arrow{font-size:11px}.rules-title{height:62px;padding:0 14px;font-size:17px;gap:9px;border-top-left-radius:15px;border-top-right-radius:15px}.info{width:31px;height:31px;font-size:17px}.rules-body{padding:3px 13px 8px}.rule{grid-template-columns:34px 1fr;gap:9px;padding:12px 0}.rule-num{width:32px;height:32px;font-size:10px}.rule p{font-size:10.5px;line-height:1.55}.bottom-art{height:35px}}
-@media(max-width:390px){.date{font-size:24px}.market-status{font-size:9px}.thead,.quote-row{grid-template-columns:1fr 96px 86px;gap:5px}.product{font-size:11px}.prices{font-size:18px}.hkd-rate{font-size:11px}.rules-title{font-size:16px}}
-</style></head><body><div class="page"><div class="shell">
-<header class="header"><div class="datetime"><div id="date" class="date">--</div><div class="time"><svg class="hkflag" viewBox="0 0 24 17"><rect width="24" height="17" rx="2" fill="#DE2910"/><path d="M8.4 4.7c-1.9-1-3.7.5-3 2.2.45 1.1 1.7 1.5 2.8.8-1.15.15-1.85-.7-1.55-1.45.28-.67 1.08-.94 1.75-.86Z" fill="#fff"/><circle cx="9.2" cy="5.5" r=".6" fill="#fff"/><circle cx="7.4" cy="4.2" r=".6" fill="#fff"/><circle cx="6.2" cy="6.7" r=".6" fill="#fff"/><circle cx="8.8" cy="7.8" r=".6" fill="#fff"/></svg><span id="time">--:--:-- -- HKT</span></div></div><div class="market-status"><span class="status-dot"></span><span>LIVE MARKET</span></div></header>
-<main class="main"><section class="card"><div class="rates-inner rates-only"><div class="thead"><div>PRODUCT (GOLD - 999.9)</div><div>USD RATE/GRAM</div><div>HKD RATE/GRAM</div></div><div id="rows"></div></div></section>
-<section class="card"><div class="rules-title"><span class="info">i</span><span>Booking Rules / Notes</span></div><div class="rules-body"><div class="rule"><span class="rule-num">01</span><p>After checking the live rate, whenever you're ready to confirm a booking, you must write down the <b>required grams</b>.</p></div><div class="rule"><span class="rule-num">02</span><p>Once you send the grams, we will reply with <b>"OK"</b> at that same time, confirming your booking is being processed at that exact moment.</p></div><div class="rule"><span class="rule-num">03</span><p>Right after confirmation, we will send you a <b>screenshot of the rate</b>.</p></div><div class="rule"><span class="rule-num">04</span><p>If your booking is urgent, please <b>call us directly</b> to alert us at the time of booking — WhatsApp messages may sometimes be missed or delayed, so a call ensures immediate confirmation.</p></div></div></section></main>
-<div class="bottom-art"></div></div></div><script>(()=>{let previousBid=null;function hk(){const p=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Hong_Kong",year:"numeric",month:"numeric",day:"numeric",hour:"numeric",minute:"2-digit",second:"2-digit",hour12:true}).formatToParts(new Date());const g=t=>p.find(x=>x.type===t)?.value||"";return{year:+g("year"),month:+g("month"),day:+g("day"),hour:g("hour"),minute:g("minute"),second:g("second"),dp:g("dayPeriod")}}function clock(){const h=hk(),m=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];document.getElementById("date").textContent=h.day+"-"+m[h.month-1]+"-"+String(h.year).slice(-2);document.getElementById("time").textContent=h.hour+":"+h.minute+":"+h.second+" "+h.dp+" HKT"}async function price(){try{const r=await fetch("/api/price?_="+Date.now(),{cache:"no-store"}),d=await r.json();if(!d.ok)return;const rows=d.rows||[];const currentBid=Number(d.bid);let marketArrow="";let marketCls="same";if(Number.isFinite(currentBid)&&previousBid!==null&&Number.isFinite(previousBid)){if(currentBid>previousBid){marketArrow="▲";marketCls="up"}else if(currentBid<previousBid){marketArrow="▼";marketCls="down"}}document.getElementById("rows").innerHTML=rows.map((x,i)=>{if(!x.label)return "";const value=x.rate===null?null:Number(x.rate);const hkdValue=x.hkdRate===null||x.hkdRate===undefined?null:Number(x.hkdRate);const arrow=marketArrow;const cls=marketCls;return '<div class="quote-row"><div class="product-wrap"><div class="product-icon"><div class="gold-mark" aria-hidden="true"></div></div><div class="product">'+escapeHtml(x.label)+'</div></div><div class="prices">'+(arrow?'<span class="rate-arrow '+cls+'">'+arrow+'</span>':"")+(value===null?"---":value.toFixed(2))+'</div><div class="hkd-rate">'+(hkdValue===null?"---":hkdValue.toFixed(2))+'</div></div>'}).join("");if(Number.isFinite(currentBid))previousBid=currentBid}catch(e){}}function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}clock();price();setInterval(clock,1000);setInterval(price,1000)})();</script></body></html>`;
-}
-
 function startUpstream(){
   if(!TOKEN){console.log("[RELAY] WFBULLION_TOKEN is missing.");return;}
   console.log("[RELAY] Starting WFBullion connection...");
@@ -189,4 +402,3 @@ function startUpstream(){
   socket.on("connect_error",e=>{latest.connected=false;console.log("[RELAY] WFBullion CONNECT_ERROR: "+e.message)});
 }
 server.listen(PORT,"0.0.0.0",()=>{console.log("[RELAY] Server listening on port "+PORT);startUpstream()});
-
