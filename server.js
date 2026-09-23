@@ -44,11 +44,11 @@ const PRODUCTS = [
 ];
 
 const LINKS = [
-  { id: "link1", label: "LINK_1" },
-  { id: "link2", label: "LINK_2" },
-  { id: "link3", label: "LINK_3" },
-  { id: "link4", label: "LINK_4" },
-  { id: "link5", label: "LINK_5" }
+  { id: "link1", label: "D1" },
+  { id: "link2", label: "T2" },
+  { id: "link3", label: "M3" },
+  { id: "link4", label: "C4" },
+  { id: "link5", label: "L5" }
 ];
 
 const MARKUPS = {
