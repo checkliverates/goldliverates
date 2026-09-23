@@ -44,11 +44,11 @@ const PRODUCTS = [
 ];
 
 const LINKS = [
-  { id: "link1", label: "D1" },
-  { id: "link2", label: "T2" },
-  { id: "link3", label: "M3" },
-  { id: "link4", label: "C4" },
-  { id: "link5", label: "L5" }
+  { id: "link1", label: "LINK_1" },
+  { id: "link2", label: "LINK_2" },
+  { id: "link3", label: "LINK_3" },
+  { id: "link4", label: "LINK_4" },
+  { id: "link5", label: "LINK_5" }
 ];
 
 const MARKUPS = {
@@ -105,9 +105,16 @@ function calculateRows(linkId) {
   });
 }
 
+// Returns MAIN_LINK_ID only when explicitly requested (?link=main), a real
+// configured link id when it matches one in LINKS, or null for anything else
+// (no ?link= param at all, or an unrecognized/mistyped value). null means
+// "refuse to serve rates" - the bare URL and wrong links must NOT silently
+// fall back to the 0-markup main link, or a client sharing a screenshot of
+// a wrong link would show 0 markup instead of an error.
 function resolveLinkId(raw) {
-  if (!raw) return MAIN_LINK_ID;
-  return LINKS.some(l => l.id === raw) ? raw : MAIN_LINK_ID;
+  if (!raw) return null;
+  if (raw === MAIN_LINK_ID) return MAIN_LINK_ID;
+  return LINKS.some(l => l.id === raw) ? raw : null;
 }
 
 function adminPage() {
@@ -135,7 +142,7 @@ select{width:100%;padding:14px;font-size:16px;border:1px solid #ccc;border-radiu
 <h1>Markup Settings</h1>
 <p class="sub">Pick a client link, edit its markups, then Save. Changes are live immediately. Markups never appear on any client-facing page.</p>
 <div class="panel">
-<div class="mainlink"><b>Main link (always 0.00 markup):</b><code id="mainUrl">-</code></div>
+<div class="mainlink"><b>Main link (always 0.00 markup, for your own checking only):</b><code id="mainUrl">-</code><br><small>The plain site URL with no <code>?link=</code> and any wrong/mistyped link now show an error page instead of rates.</small></div>
 </div>
 <div class="panel">
 <label class="fieldlabel" for="linkSelect">Client link</label>
@@ -189,7 +196,7 @@ async function load(){
   STATE.links = d.links;
   STATE.markups = d.markups;
   STATE.frontendUrl = d.frontendUrl;
-  document.getElementById("mainUrl").textContent = STATE.frontendUrl + "/";
+  document.getElementById("mainUrl").textContent = STATE.frontendUrl + "/?link=main";
   renderLinkSelect();
   renderRows();
 }
@@ -236,6 +243,16 @@ const server = http.createServer((req, res) => {
     }
 
     const linkId = resolveLinkId(url.searchParams.get("link"));
+    if (linkId === null) {
+      // No ?link= param, or an unrecognized/mistyped one. Never fall back to
+      // 0-markup "main" here - show a clear error instead so a wrong link
+      // never silently displays rates.
+      return sendJson(res, {
+        ok:false,
+        invalidLink:true,
+        message:"This link is invalid or incomplete. Please check the link and try again, or ask your provider for the correct link."
+      });
+    }
     const rows = calculateRows(linkId);
     return sendJson(res, {
       ok:true,
