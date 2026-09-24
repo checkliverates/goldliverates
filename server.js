@@ -55,15 +55,17 @@ const PRODUCTS = [
 const LINKS = [
   { id: "DH1", label: "DH1" },
   { id: "2CT", label: "2CT" },
-  { id: "G3R", label: "G3R" }
+  { id: "G3R", label: "G3R" },
+  { id: "C4F", label: "C4F" },
+  { id: "LM5", label: "LM5" }
 ];
 
 const MARKUPS = {
-  "tael":     { DH1: 20.00, "2CT": 21.00, G3R: 19.00},
-  "p75-199":  { DH1: 17.00, "2CT": 18.00, G3R: 16.00},
-  "p200-399": { DH1: 12.00, "2CT": 13.00, G3R: 11.00},
-  "p400-999": { DH1:  9.00, "2CT": 10.00, G3R:  8.00},
-  "p1000":    { DH1:  5.00, "2CT":  6.00, G3R:  4.00}
+  "tael":     { DH1: 20.00, "2CT": 21.00, G3R: 19.00, C4F: 22.00, LM5: 20.50 },
+  "p75-199":  { DH1: 17.00, "2CT": 18.00, G3R: 16.00, C4F: 19.00, LM5: 17.50 },
+  "p200-399": { DH1: 12.00, "2CT": 13.00, G3R: 11.00, C4F: 14.00, LM5: 12.50 },
+  "p400-999": { DH1:  9.00, "2CT": 10.00, G3R:  8.00, C4F: 11.00, LM5:  9.50 },
+  "p1000":    { DH1:  5.00, "2CT":  6.00, G3R:  4.00, C4F:  7.00, LM5:  5.50 }
 };
 
 let latest = {
@@ -125,13 +127,20 @@ async function loadMarkupsFromStore() {
 // successful /admin/save. Never blocks or fails the admin response - if
 // the store is unreachable, the change still applies live in memory, it
 // just won't survive the next restart.
+//
+// Uses GET (not POST) on purpose: Apps Script web apps respond with an
+// internal redirect, and most HTTP clients (including Node's fetch)
+// silently downgrade a POST to a GET and drop its body when following a
+// redirect - so a POST save can look like it "worked" but actually arrives
+// with no data and gets rejected. GET requests aren't affected by this, so
+// the markup data is sent as a URL parameter instead of a POST body.
 function saveMarkupsToStore() {
   if (!MARKUP_STORE_URL) return;
-  fetch(MARKUP_STORE_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ secret: MARKUP_STORE_SECRET, markups: MARKUPS })
-  }).then(res => res.json()).then(data => {
+  const url = MARKUP_STORE_URL
+    + "?secret=" + encodeURIComponent(MARKUP_STORE_SECRET)
+    + "&action=save"
+    + "&data=" + encodeURIComponent(JSON.stringify(MARKUPS));
+  fetch(url).then(res => res.json()).then(data => {
     if (!data || !data.ok) console.log("[MARKUPS] Persistent store rejected save: " + (data && data.message));
   }).catch(e => {
     console.log("[MARKUPS] Could not save to persistent store: " + e.message);
