@@ -6,42 +6,16 @@ const WF_SERVER = "https://quote.wfgroup.com.hk:8083";
 const TOKEN = process.env.WFBULLION_TOKEN || "";
 const ADMIN_KEY = process.env.ADMIN_KEY || "";
 
-// Used only to print shareable client-link URLs on the /admin page.
-// Set FRONTEND_URL in Render Environment Variables if your static site
-// ever moves to a different domain.
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://gold-live-rates.onrender.com";
 
-// Optional persistent storage for MARKUPS (a Google Apps Script Web App URL
-// backed by a Google Sheet). If these are not set, the app behaves exactly
-// as before: MARKUPS only lives in memory and resets to the hardcoded
-// defaults below on every restart. Once set, MARKUPS is loaded from here on
-// startup and pushed here on every successful /admin/save, so markup
-// changes survive Render restarts/spin-downs.
-const MARKUP_STORE_URL = process.env.MARKUP_STORE_URL || "";
-const MARKUP_STORE_SECRET = process.env.MARKUP_STORE_SECRET || "";
+// .trim() matters here: a stray trailing space or newline pasted into the
+// Render env var box (very easy to do with copy/paste) would make this
+// secret NOT match the SECRET hardcoded in Apps Script, and Apps Script
+// would correctly reject every request as "Unauthorized" - even though the
+// URL, code, and everything else look identical.
+const MARKUP_STORE_URL = (process.env.MARKUP_STORE_URL || "").trim();
+const MARKUP_STORE_SECRET = (process.env.MARKUP_STORE_SECRET || "").trim();
 
-// ============================================================
-// PRODUCT ROWS  x  CLIENT LINKS  x  MARKUPS
-// ------------------------------------------------------------
-// PRODUCTS: the rows of the table. unitMultiplier converts the
-//   per-gram rate into whatever unit that row displays:
-//     1       -> per gram (e.g. "75 - 199 Grams")
-//     37.429  -> per tael (e.g. "1 Tael")
-//   New rows (e.g. a future "gram size" row) just need a label
-//   and a unitMultiplier — no other code changes needed.
-//
-// LINKS: your client categories. Each link is shared as:
-//   FRONTEND_URL + "/?link=" + link.id
-//   There is always an implicit "main" link (id reserved, not
-//   listed here) that always uses 0.00 markup on every row:
-//   FRONTEND_URL + "/"  (no ?link param, or an unrecognized one)
-//
-// MARKUPS: MARKUPS[productId][linkId] = markup added (in USD,
-//   per gram) before dividing by 31.1035. Never sent to the browser.
-//
-// All three of these can also be edited live from /admin — this is
-// just the starting/default data.
-// ============================================================
 const MAIN_LINK_ID = "main";
 
 const PRODUCTS = [
@@ -88,17 +62,22 @@ function truncate2(n) {
   return Math.trunc((n + Number.EPSILON) * 100) / 100;
 }
 
-// Loads saved markups from the Google Sheet (via Apps Script) at startup.
-// Only overwrites markups for product/link ids that still exist in this
-// file - if MARKUP_STORE_URL/SECRET aren't set, or the sheet is empty, or
-// it can't be reached, this silently does nothing and the hardcoded
-// MARKUPS above stay as-is (same behavior as before this feature existed).
 async function loadMarkupsFromStore() {
   if (!MARKUP_STORE_URL) return;
+  // Diagnostic only - never prints the secret itself, just its length, so
+  // you can compare it against what you typed into Apps Script (SECRET =
+  // "Iamthebo$$1355kdfiuerpljdktu" is 28 characters). If this number looks
+  // wrong, the Render env var has extra/missing characters (commonly a
+  // trailing space or newline from a copy/paste).
+  console.log("[MARKUPS] Store URL configured. Secret length: " + MARKUP_STORE_SECRET.length);
   try {
     const res = await fetch(MARKUP_STORE_URL + "?secret=" + encodeURIComponent(MARKUP_STORE_SECRET));
     const data = await res.json();
-    if (!data || !data.ok || !data.markups || typeof data.markups !== "object") {
+    if (!data || !data.ok) {
+      console.log("[MARKUPS] Store load was not ok: " + (data && data.message) + " - using defaults from server.js.");
+      return;
+    }
+    if (!data.markups || typeof data.markups !== "object") {
       console.log("[MARKUPS] Store returned no saved data yet - using defaults from server.js.");
       return;
     }
@@ -121,17 +100,6 @@ async function loadMarkupsFromStore() {
   }
 }
 
-// Fire-and-forget push of the full MARKUPS object to the store after a
-// successful /admin/save. Never blocks or fails the admin response - if
-// the store is unreachable, the change still applies live in memory, it
-// just won't survive the next restart.
-//
-// Uses GET (not POST) on purpose: Apps Script web apps respond with an
-// internal redirect, and most HTTP clients (including Node's fetch)
-// silently downgrade a POST to a GET and drop its body when following a
-// redirect - so a POST save can look like it "worked" but actually arrives
-// with no data and gets rejected. GET requests aren't affected by this, so
-// the markup data is sent as a URL parameter instead of a POST body.
 function saveMarkupsToStore() {
   if (!MARKUP_STORE_URL) return;
   const url = MARKUP_STORE_URL
@@ -139,19 +107,16 @@ function saveMarkupsToStore() {
     + "&action=save"
     + "&data=" + encodeURIComponent(JSON.stringify(MARKUPS));
   fetch(url).then(res => res.json()).then(data => {
-    if (!data || !data.ok) console.log("[MARKUPS] Persistent store rejected save: " + (data && data.message));
+    if (!data || !data.ok) {
+      console.log("[MARKUPS] Persistent store rejected save: " + (data && data.message) + " (secret length sent: " + MARKUP_STORE_SECRET.length + ")");
+    } else {
+      console.log("[MARKUPS] Saved to persistent store OK.");
+    }
   }).catch(e => {
     console.log("[MARKUPS] Could not save to persistent store: " + e.message);
   });
 }
 
-// TRUNCATE((LLG selling price + row markup) / 31.1035, 2) for the base
-// per-gram USD rate, same base rate used for the HKD side. Rows with
-// unitMultiplier 1 (every gram-bracket row) stop there, truncated exactly
-// once - identical to the original per-row formula. Rows with a different
-// unitMultiplier (e.g. 37.429 for "1 Tael") multiply that already-truncated
-// base rate and truncate a second time, matching the confirmed Tael formula
-// exactly. The "main" link always uses markup 0.
 function calculateRows(linkId) {
   if (latest.bid === null) return [];
   const isMain = linkId === MAIN_LINK_ID;
@@ -160,21 +125,12 @@ function calculateRows(linkId) {
     const multiplier = Number(p.unitMultiplier) || 1;
     const baseRate = truncate2((latest.bid + markup) / 31.1035);
     const baseHkd = latest.hkdSell !== null ? truncate2(baseRate * latest.hkdSell) : null;
-    // Only re-truncate when there's an actual conversion to do — re-running
-    // truncate2 on a value that's already truncated can shave a cent off
-    // due to floating-point rounding, so multiplier===1 rows skip it.
     const rate = multiplier === 1 ? baseRate : truncate2(baseRate * multiplier);
     const hkdRate = baseHkd === null ? null : (multiplier === 1 ? baseHkd : truncate2(baseHkd * multiplier));
     return { id: p.id, label: p.label, rate, hkdRate };
   });
 }
 
-// Returns MAIN_LINK_ID only when explicitly requested (?link=main), a real
-// configured link id when it matches one in LINKS, or null for anything else
-// (no ?link= param at all, or an unrecognized/mistyped value). null means
-// "refuse to serve rates" - the bare URL and wrong links must NOT silently
-// fall back to the 0-markup main link, or a client sharing a screenshot of
-// a wrong link would show 0 markup instead of an error.
 function resolveLinkId(raw) {
   if (!raw) return null;
   if (raw === MAIN_LINK_ID) return MAIN_LINK_ID;
@@ -263,9 +219,9 @@ function renderRows(){
     var v = (STATE.markups[p.id] && STATE.markups[p.id][currentLinkId] !== undefined) ? STATE.markups[p.id][currentLinkId] : 0;
     return "<div class='row'><div class='rlabel'>"+esc(p.label)+"</div>" +
       "<div class='valctrl'>" +
-        "<button type='button' class='stepbtn' onclick=\\"stepValue('"+esc(p.id)+"',-1)\\">&minus;</button>" +
+        "<button type='button' class='stepbtn' onclick=\"stepValue('"+esc(p.id)+"',-1)\">&minus;</button>" +
         "<input type='number' step='0.01' inputmode='decimal' id='m_"+esc(p.id)+"' value='"+v+"'>" +
-        "<button type='button' class='stepbtn' onclick=\\"stepValue('"+esc(p.id)+"',1)\\">+</button>" +
+        "<button type='button' class='stepbtn' onclick=\"stepValue('"+esc(p.id)+"',1)\">+</button>" +
       "</div></div>";
   }).join("");
   document.getElementById("msg").textContent = "";
@@ -375,9 +331,6 @@ const server = http.createServer((req, res) => {
 
     const linkId = resolveLinkId(url.searchParams.get("link"));
     if (linkId === null) {
-      // No ?link= param, or an unrecognized/mistyped one. Never fall back to
-      // 0-markup "main" here - show a clear error instead so a wrong link
-      // never silently displays rates.
       return sendJson(res, {
         ok:false,
         invalidLink:true,
@@ -400,17 +353,11 @@ const server = http.createServer((req, res) => {
       res.writeHead(503, {"Content-Type":"text/plain; charset=utf-8"});
       return res.end("Admin is disabled. Set ADMIN_KEY in Render Environment Variables.");
     }
-    // No key in the URL anymore - the page itself only shows a password box.
-    // The password is checked against /admin/data (x-admin-key header) once
-    // typed in, so a leaked /admin link on its own grants no access.
     res.writeHead(200,{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store"});
     return res.end(adminPage());
   }
 
   if (url.pathname === "/admin/data") {
-    // Requires the same x-admin-key header as /admin/save. Without this
-    // check, anyone who finds this URL could read every link's markup
-    // without ever knowing ADMIN_KEY.
     if (!ADMIN_KEY || req.headers["x-admin-key"] !== ADMIN_KEY) return sendJson(res,{ok:false,message:"Unauthorized"},401);
     return sendJson(res,{ ok:true, products:PRODUCTS, links:LINKS, markups:MARKUPS, frontendUrl:FRONTEND_URL });
   }
@@ -422,10 +369,6 @@ const server = http.createServer((req, res) => {
     req.on("end", () => {
       try {
         const parsed = JSON.parse(body);
-        // /admin can only change markup VALUES for rows/links that already
-        // exist in PRODUCTS/LINKS (defined in this file). It can never add,
-        // rename or delete a row or link - that's a code change, done here
-        // in server.js and deployed, on purpose.
         const linkId = String(parsed.linkId || "").trim();
         const link = LINKS.find(l => l.id === linkId);
         if (!link) throw new Error("Unknown link id: " + linkId);
@@ -475,9 +418,6 @@ function startUpstream(){
   socket.on("disconnect",reason=>{latest.connected=false;console.log("[RELAY] WFBullion DISCONNECTED: "+reason)});
   socket.on("connect_error",e=>{latest.connected=false;console.log("[RELAY] WFBullion CONNECT_ERROR: "+e.message)});
 }
-// Load any saved markups before accepting traffic, so the very first
-// requests already reflect your last-saved values instead of a brief
-// moment of the server.js defaults.
 loadMarkupsFromStore().finally(() => {
   server.listen(PORT,"0.0.0.0",()=>{console.log("[RELAY] Server listening on port "+PORT);startUpstream()});
 });
