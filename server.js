@@ -130,13 +130,13 @@ h1{margin:0 0 4px;font-size:22px}
 label.fieldlabel{display:block;font-size:13px;font-weight:600;color:#5c6b7a;margin-bottom:6px}
 select,input[type=password]{width:100%;padding:14px;font-size:16px;border:1px solid #ccc;border-radius:10px;background:#fff;-webkit-appearance:none;appearance:none}
 .linkurl{font-size:12px;color:#5c6b7a;word-break:break-all;margin-top:8px}
-.row{display:flex;flex-direction:column;gap:10px;padding:14px 0;border-bottom:1px solid #eef1f4}
+.row{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid #eef1f4}
 .row:last-child{border-bottom:0}
-.row .rlabel{font-size:15px;font-weight:600}
-.valctrl{display:flex;align-items:center;gap:8px}
-.stepbtn{width:46px;height:46px;flex:none;font-size:24px;font-weight:700;line-height:1;border:1px solid #ccc;border-radius:10px;background:#f5f5f5;color:#1a2b3c;cursor:pointer;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;user-select:none}
+.row .rlabel{flex:1;min-width:0;font-size:13.5px;font-weight:600;line-height:1.25}
+.valctrl{display:flex;align-items:center;gap:6px;flex:none}
+.stepbtn{width:36px;height:36px;flex:none;font-size:19px;font-weight:700;line-height:1;border:1px solid #ccc;border-radius:9px;background:#f5f5f5;color:#1a2b3c;cursor:pointer;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;user-select:none}
 .stepbtn:active{background:#e2e2e2}
-.row input[type=number]{flex:1;min-width:0;padding:12px 8px;font-size:18px;border:1px solid #ccc;border-radius:10px;text-align:center;box-sizing:border-box}
+.row input[type=number]{width:58px;flex:none;padding:8px 2px;font-size:15px;border:1px solid #ccc;border-radius:9px;text-align:center;box-sizing:border-box}
 .savebtn{width:100%;padding:16px;font-size:17px;font-weight:700;background:#c59a22;color:#fff;border:0;border-radius:12px;cursor:pointer;margin-top:6px}
 .savebtn:disabled{opacity:.6;cursor:default}
 .msg{margin-top:14px;font-weight:700;font-size:14px}
