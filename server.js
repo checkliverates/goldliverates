@@ -11,6 +11,15 @@ const ADMIN_KEY = process.env.ADMIN_KEY || "";
 // ever moves to a different domain.
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://gold-live-rates.onrender.com";
 
+// Optional persistent storage for MARKUPS (a Google Apps Script Web App URL
+// backed by a Google Sheet). If these are not set, the app behaves exactly
+// as before: MARKUPS only lives in memory and resets to the hardcoded
+// defaults below on every restart. Once set, MARKUPS is loaded from here on
+// startup and pushed here on every successful /admin/save, so markup
+// changes survive Render restarts/spin-downs.
+const MARKUP_STORE_URL = process.env.MARKUP_STORE_URL || "";
+const MARKUP_STORE_SECRET = process.env.MARKUP_STORE_SECRET || "";
+
 // ============================================================
 // PRODUCT ROWS  x  CLIENT LINKS  x  MARKUPS
 // ------------------------------------------------------------
@@ -37,24 +46,26 @@ const MAIN_LINK_ID = "main";
 
 const PRODUCTS = [
   { id: "tael",      label: "1 Tael",           unitMultiplier: 37.429 },
-  { id: "p75-199",   label: "75-199 Grams",   unitMultiplier: 1 },
-  { id: "p200-399",  label: "200-399 Grams",  unitMultiplier: 1 },
-  { id: "p400-999",  label: "400-999 Grams",  unitMultiplier: 1 },
+  { id: "p75-199",   label: "75 - 199 Grams",   unitMultiplier: 1 },
+  { id: "p200-399",  label: "200 - 399 Grams",  unitMultiplier: 1 },
+  { id: "p400-999",  label: "400 - 999 Grams",  unitMultiplier: 1 },
   { id: "p1000",     label: "1000 Grams",       unitMultiplier: 1 }
 ];
 
 const LINKS = [
   { id: "DH1", label: "DH1" },
   { id: "2CT", label: "2CT" },
-  { id: "G3R", label: "G3R" }
+  { id: "G3R", label: "G3R" },
+  { id: "C4F", label: "C4F" },
+  { id: "LM5", label: "LM5" }
 ];
 
 const MARKUPS = {
-  "tael":     { DH1: 13.00, "2CT": 13.00, G3R: 13.00},
-  "p75-199":  { DH1: 13.00, "2CT": 10.00, G3R: 9.00},
-  "p200-399": { DH1: 11.00, "2CT": 7.00, G3R: 6.00},
-  "p400-999": { DH1:  9.00, "2CT": 5.00, G3R:  3.00},
-  "p1000":    { DH1:  7.00, "2CT": 3.00, G3R:  0.00}
+  "tael":     { DH1: 20.00, "2CT": 21.00, G3R: 19.00, C4F: 22.00, LM5: 20.50 },
+  "p75-199":  { DH1: 17.00, "2CT": 18.00, G3R: 16.00, C4F: 19.00, LM5: 17.50 },
+  "p200-399": { DH1: 12.00, "2CT": 13.00, G3R: 11.00, C4F: 14.00, LM5: 12.50 },
+  "p400-999": { DH1:  9.00, "2CT": 10.00, G3R:  8.00, C4F: 11.00, LM5:  9.50 },
+  "p1000":    { DH1:  5.00, "2CT":  6.00, G3R:  4.00, C4F:  7.00, LM5:  5.50 }
 };
 
 let latest = {
@@ -77,6 +88,56 @@ function sendJson(res, data, status = 200) {
 
 function truncate2(n) {
   return Math.trunc((n + Number.EPSILON) * 100) / 100;
+}
+
+// Loads saved markups from the Google Sheet (via Apps Script) at startup.
+// Only overwrites markups for product/link ids that still exist in this
+// file - if MARKUP_STORE_URL/SECRET aren't set, or the sheet is empty, or
+// it can't be reached, this silently does nothing and the hardcoded
+// MARKUPS above stay as-is (same behavior as before this feature existed).
+async function loadMarkupsFromStore() {
+  if (!MARKUP_STORE_URL) return;
+  try {
+    const res = await fetch(MARKUP_STORE_URL + "?secret=" + encodeURIComponent(MARKUP_STORE_SECRET));
+    const data = await res.json();
+    if (!data || !data.ok || !data.markups || typeof data.markups !== "object") {
+      console.log("[MARKUPS] Store returned no saved data yet - using defaults from server.js.");
+      return;
+    }
+    let applied = 0;
+    for (const p of PRODUCTS) {
+      const savedForProduct = data.markups[p.id];
+      if (!savedForProduct || typeof savedForProduct !== "object") continue;
+      for (const l of LINKS) {
+        if (savedForProduct[l.id] === undefined) continue;
+        const v = Number(savedForProduct[l.id]);
+        if (!Number.isFinite(v)) continue;
+        if (!MARKUPS[p.id]) MARKUPS[p.id] = {};
+        MARKUPS[p.id][l.id] = v;
+        applied++;
+      }
+    }
+    console.log("[MARKUPS] Loaded " + applied + " saved markup value(s) from persistent store.");
+  } catch (e) {
+    console.log("[MARKUPS] Could not reach persistent store, using defaults from server.js: " + e.message);
+  }
+}
+
+// Fire-and-forget push of the full MARKUPS object to the store after a
+// successful /admin/save. Never blocks or fails the admin response - if
+// the store is unreachable, the change still applies live in memory, it
+// just won't survive the next restart.
+function saveMarkupsToStore() {
+  if (!MARKUP_STORE_URL) return;
+  fetch(MARKUP_STORE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ secret: MARKUP_STORE_SECRET, markups: MARKUPS })
+  }).then(res => res.json()).then(data => {
+    if (!data || !data.ok) console.log("[MARKUPS] Persistent store rejected save: " + (data && data.message));
+  }).catch(e => {
+    console.log("[MARKUPS] Could not save to persistent store: " + e.message);
+  });
 }
 
 // TRUNCATE((LLG selling price + row markup) / 31.1035, 2) for the base
@@ -380,8 +441,12 @@ const server = http.createServer((req, res) => {
           if (!MARKUPS[pid]) MARKUPS[pid] = {};
           MARKUPS[pid][linkId] = markup;
         });
+        saveMarkupsToStore();
 
-        return sendJson(res, { ok:true, message: "Saved " + updates.length + " row(s) for " + link.label + ". Live now. Note: Render restarts reset in-memory changes." });
+        const persistNote = MARKUP_STORE_URL
+          ? "Live now, and saved so it survives restarts."
+          : "Live now. Note: Render restarts reset this (persistent storage isn't configured yet).";
+        return sendJson(res, { ok:true, message: "Saved " + updates.length + " row(s) for " + link.label + ". " + persistNote });
       } catch (e) { return sendJson(res, { ok:false, message:e.message }, 400); }
     });
     return;
@@ -405,4 +470,9 @@ function startUpstream(){
   socket.on("disconnect",reason=>{latest.connected=false;console.log("[RELAY] WFBullion DISCONNECTED: "+reason)});
   socket.on("connect_error",e=>{latest.connected=false;console.log("[RELAY] WFBullion CONNECT_ERROR: "+e.message)});
 }
-server.listen(PORT,"0.0.0.0",()=>{console.log("[RELAY] Server listening on port "+PORT);startUpstream()});
+// Load any saved markups before accepting traffic, so the very first
+// requests already reflect your last-saved values instead of a brief
+// moment of the server.js defaults.
+loadMarkupsFromStore().finally(() => {
+  server.listen(PORT,"0.0.0.0",()=>{console.log("[RELAY] Server listening on port "+PORT);startUpstream()});
+});
