@@ -127,23 +127,38 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,
 h1{margin:0 0 4px;font-size:22px}
 .sub{color:#5c6b7a;margin:0 0 18px;font-size:13px;line-height:1.5}
 .panel{background:#fff;border:1px solid #e3d8b8;border-radius:16px;padding:18px;box-shadow:0 10px 28px rgba(0,0,0,.06);margin-bottom:16px}
-.mainlink{font-size:13px;line-height:1.6}
-.mainlink code{display:block;background:#f0f4f8;padding:8px 10px;border-radius:8px;font-size:12px;word-break:break-all;margin-top:4px}
 label.fieldlabel{display:block;font-size:13px;font-weight:600;color:#5c6b7a;margin-bottom:6px}
-select{width:100%;padding:14px;font-size:16px;border:1px solid #ccc;border-radius:10px;background:#fff;-webkit-appearance:none;appearance:none}
+select,input[type=password]{width:100%;padding:14px;font-size:16px;border:1px solid #ccc;border-radius:10px;background:#fff;-webkit-appearance:none;appearance:none}
 .linkurl{font-size:12px;color:#5c6b7a;word-break:break-all;margin-top:8px}
-.row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 0;border-bottom:1px solid #eef1f4}
+.row{display:flex;flex-direction:column;gap:10px;padding:14px 0;border-bottom:1px solid #eef1f4}
 .row:last-child{border-bottom:0}
-.row .rlabel{font-size:15px;font-weight:600;flex:1;min-width:0}
-.row input[type=number]{width:120px;padding:13px 10px;font-size:18px;border:1px solid #ccc;border-radius:10px;text-align:right;box-sizing:border-box}
+.row .rlabel{font-size:15px;font-weight:600}
+.valctrl{display:flex;align-items:center;gap:8px}
+.stepbtn{width:46px;height:46px;flex:none;font-size:24px;font-weight:700;line-height:1;border:1px solid #ccc;border-radius:10px;background:#f5f5f5;color:#1a2b3c;cursor:pointer;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;user-select:none}
+.stepbtn:active{background:#e2e2e2}
+.row input[type=number]{flex:1;min-width:0;padding:12px 8px;font-size:18px;border:1px solid #ccc;border-radius:10px;text-align:center;box-sizing:border-box}
 .savebtn{width:100%;padding:16px;font-size:17px;font-weight:700;background:#c59a22;color:#fff;border:0;border-radius:12px;cursor:pointer;margin-top:6px}
+.savebtn:disabled{opacity:.6;cursor:default}
 .msg{margin-top:14px;font-weight:700;font-size:14px}
+.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px;border:1px solid #eef1f4}
+table.overview{border-collapse:collapse;width:100%;font-size:12.5px;min-width:380px}
+table.overview th,table.overview td{padding:9px 10px;text-align:center;border-bottom:1px solid #eef1f4;white-space:nowrap}
+table.overview tr:last-child td{border-bottom:0}
+table.overview th{background:#0b69bf;color:#fff;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+table.overview td:first-child,table.overview th:first-child{text-align:left;font-weight:600;color:#164f8e;position:sticky;left:0;background:#f8fbfe}
+table.overview th:first-child{background:#0b69bf;color:#fff}
 </style></head><body><div class="wrap">
 <h1>Markup Settings</h1>
-<p class="sub">Pick a client link, edit its markups, then Save. Changes are live immediately. Markups never appear on any client-facing page.</p>
-<div class="panel">
-<div class="mainlink"><b>Main link (always 0.00 markup, for your own checking only):</b><code id="mainUrl">-</code><br><small>The plain site URL with no <code>?link=</code> and any wrong/mistyped link now show an error page instead of rates.</small></div>
+<p class="sub">Enter the password to manage markups. Changes are live immediately. Markups never appear on any client-facing page.</p>
+
+<div class="panel" id="gatePanel">
+<label class="fieldlabel" for="pwInput">Password</label>
+<input type="password" id="pwInput" placeholder="Enter admin password" autocomplete="current-password" autofocus onkeydown="if(event.key==='Enter'){unlock()}">
+<button class="savebtn" id="unlockBtn" onclick="unlock()" type="button" style="margin-top:12px">Unlock</button>
+<div id="pwErr" class="msg" style="color:#c23246"></div>
 </div>
+
+<div id="appPanel" style="display:none">
 <div class="panel">
 <label class="fieldlabel" for="linkSelect">Client link</label>
 <select id="linkSelect" onchange="onLinkChange()"></select>
@@ -154,10 +169,16 @@ select{width:100%;padding:14px;font-size:16px;border:1px solid #ccc;border-radiu
 <button class="savebtn" onclick="save()" type="button">Save Changes</button>
 <div id="msg" class="msg"></div>
 </div>
+<div class="panel">
+<label class="fieldlabel">All Links Overview</label>
+<div class="tablewrap"><table class="overview" id="overviewTable"></table></div>
+</div>
+</div>
+
 </div>
 <script>
 var STATE={products:[],links:[],markups:{},frontendUrl:""};
-var URL_KEY = new URLSearchParams(location.search).get("key") || "";
+var ADMIN_KEY_VAL = "";
 var currentLinkId = null;
 
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
@@ -177,9 +198,36 @@ function renderRows(){
   document.getElementById("rowsWrap").innerHTML = STATE.products.map(function(p){
     var v = (STATE.markups[p.id] && STATE.markups[p.id][currentLinkId] !== undefined) ? STATE.markups[p.id][currentLinkId] : 0;
     return "<div class='row'><div class='rlabel'>"+esc(p.label)+"</div>" +
-      "<input type='number' step='0.01' inputmode='decimal' id='m_"+esc(p.id)+"' value='"+v+"'></div>";
+      "<div class='valctrl'>" +
+        "<button type='button' class='stepbtn' onclick=\\"stepValue('"+esc(p.id)+"',-1)\\">&minus;</button>" +
+        "<input type='number' step='0.01' inputmode='decimal' id='m_"+esc(p.id)+"' value='"+v+"'>" +
+        "<button type='button' class='stepbtn' onclick=\\"stepValue('"+esc(p.id)+"',1)\\">+</button>" +
+      "</div></div>";
   }).join("");
   document.getElementById("msg").textContent = "";
+}
+
+function stepValue(id, delta){
+  var el = document.getElementById("m_"+id);
+  if(!el) return;
+  var v = Number(el.value);
+  if(!Number.isFinite(v)) v = 0;
+  v = Math.round((v+delta)*100)/100;
+  el.value = v;
+}
+
+function renderOverview(){
+  var t = document.getElementById("overviewTable");
+  if(!t) return;
+  var head = "<tr><th>Product</th>" + STATE.links.map(function(l){return "<th>"+esc(l.label)+"</th>";}).join("") + "</tr>";
+  var body = STATE.products.map(function(p){
+    var cells = STATE.links.map(function(l){
+      var v = (STATE.markups[p.id] && STATE.markups[p.id][l.id] !== undefined) ? STATE.markups[p.id][l.id] : 0;
+      return "<td>"+esc(Number(v).toFixed(2))+"</td>";
+    }).join("");
+    return "<tr><td>"+esc(p.label)+"</td>"+cells+"</tr>";
+  }).join("");
+  t.innerHTML = head + body;
 }
 
 function onLinkChange(){
@@ -187,23 +235,43 @@ function onLinkChange(){
   renderRows();
 }
 
-async function load(){
-  var r = await fetch("/admin/data", { headers: URL_KEY ? {"x-admin-key":URL_KEY} : {} });
-  if(r.status===401){ document.getElementById("rowsWrap").innerHTML="Unauthorized. Open this page as <code>/admin?key=YOUR_ADMIN_KEY</code>."; return; }
-  var d = await r.json();
-  if(!d.ok){ document.getElementById("rowsWrap").textContent="Failed to load."; return; }
-  STATE.products = d.products;
-  STATE.links = d.links;
-  STATE.markups = d.markups;
-  STATE.frontendUrl = d.frontendUrl;
-  document.getElementById("mainUrl").textContent = STATE.frontendUrl + "/?link=main";
-  renderLinkSelect();
-  renderRows();
+function unlock(){
+  var input = document.getElementById("pwInput");
+  var key = input.value;
+  var err = document.getElementById("pwErr");
+  var btn = document.getElementById("unlockBtn");
+  err.textContent = "";
+  if(!key){ err.textContent = "Please enter the password."; return; }
+  btn.disabled = true; btn.textContent = "Checking…";
+  fetch("/admin/data", { headers: {"x-admin-key":key} }).then(function(r){
+    if(r.status===401){
+      err.textContent = "Incorrect password. Please try again.";
+      btn.disabled = false; btn.textContent = "Unlock";
+      input.value = ""; input.focus();
+      return null;
+    }
+    return r.json();
+  }).then(function(d){
+    if(!d) return;
+    if(!d.ok){ err.textContent = "Failed to load. Please try again."; btn.disabled=false; btn.textContent="Unlock"; return; }
+    ADMIN_KEY_VAL = key;
+    STATE.products = d.products;
+    STATE.links = d.links;
+    STATE.markups = d.markups;
+    STATE.frontendUrl = d.frontendUrl;
+    document.getElementById("gatePanel").style.display = "none";
+    document.getElementById("appPanel").style.display = "block";
+    renderLinkSelect();
+    renderRows();
+    renderOverview();
+  }).catch(function(){
+    err.textContent = "Network error. Please try again.";
+    btn.disabled = false; btn.textContent = "Unlock";
+  });
 }
 
 async function save(){
-  var key = URL_KEY || prompt("Enter ADMIN_KEY");
-  if(key===null || key==="") return;
+  if(!ADMIN_KEY_VAL) return;
   var markups = {};
   STATE.products.forEach(function(p){
     var el = document.getElementById("m_"+p.id);
@@ -211,7 +279,7 @@ async function save(){
   });
   var r = await fetch("/admin/save", {
     method:"POST",
-    headers:{"Content-Type":"application/json","x-admin-key":key},
+    headers:{"Content-Type":"application/json","x-admin-key":ADMIN_KEY_VAL},
     body: JSON.stringify({linkId: currentLinkId, markups: markups})
   });
   var d = await r.json();
@@ -223,10 +291,9 @@ async function save(){
       if(!STATE.markups[p.id]) STATE.markups[p.id]={};
       if(markups[p.id]!==undefined) STATE.markups[p.id][currentLinkId]=markups[p.id];
     });
+    renderOverview();
   }
 }
-
-load();
 </script></body></html>`;
 }
 
@@ -269,10 +336,9 @@ const server = http.createServer((req, res) => {
       res.writeHead(503, {"Content-Type":"text/plain; charset=utf-8"});
       return res.end("Admin is disabled. Set ADMIN_KEY in Render Environment Variables.");
     }
-    if (url.searchParams.get("key") !== ADMIN_KEY) {
-      res.writeHead(401, {"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"});
-      return res.end("Unauthorized. Open this page as /admin?key=YOUR_ADMIN_KEY");
-    }
+    // No key in the URL anymore - the page itself only shows a password box.
+    // The password is checked against /admin/data (x-admin-key header) once
+    // typed in, so a leaked /admin link on its own grants no access.
     res.writeHead(200,{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store"});
     return res.end(adminPage());
   }
