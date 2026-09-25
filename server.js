@@ -52,15 +52,15 @@ const MAIN_LINK_ID = "main";
 const PRODUCTS = [
   { id: "tael",      label: "1 Tael",           unitMultiplier: 37.429 },
   { id: "p75-199",   label: "75 - 199 Grams",   unitMultiplier: 1 },
-  { id: "p200-399",  label: "200 - 399 Grams",  unitMultiplier: 1 }
+  { id: "p200-399",  label: "200 - 399 Grams",  unitMultiplier: 1 },
+  { id: "p400-999",  label: "400 - 999 Grams",  unitMultiplier: 1 },
+  { id: "p1000",     label: "1000 Grams",       unitMultiplier: 1 }
 ];
 
 const LINKS = [
   { id: "DH1", label: "DH1" },
   { id: "2CT", label: "2CT" },
-  { id: "G3R", label: "G3R" },
-  { id: "C4F", label: "C4F" },
-  { id: "LM5", label: "LM5" }
+  { id: "G3R", label: "G3R" }
 ];
 
 const MARKUPS = {
@@ -68,7 +68,7 @@ const MARKUPS = {
   "p75-199":  { DH1: 13.00, "2CT": 10.00, G3R:  9.00},
   "p200-399": { DH1: 11.00, "2CT":  7.00, G3R:  6.00},
   "p400-999": { DH1:  9.00, "2CT":  5.00, G3R:  3.00},
-  "p1000":    { DH1:  7.00, "2CT":  3.00, G3R:  0.00}
+  "p1000":    { DH1:  7.00, "2CT":  3.00, G3R:  1.00}
 };
 
 let latest = {
