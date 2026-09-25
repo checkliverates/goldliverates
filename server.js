@@ -284,7 +284,7 @@ function fmtNum(n){
 // or anything client-facing. This is purely a display helper for this table.
 function fmtOverviewCell(markup){
   var divided = truncate2(Number(markup) / 31.1035);
-  return fmtNum(markup) + " - " + fmtNum(divided);
+  return fmtNum(markup) + "-" + fmtNum(divided);
 }
 
 function renderLinkSelect(){
