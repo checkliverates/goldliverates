@@ -51,9 +51,9 @@ const MAIN_LINK_ID = "main";
 
 const PRODUCTS = [
   { id: "tael",      label: "1 Tael",           unitMultiplier: 37.429 },
-  { id: "p75-199",   label: "75-199 Grams",   unitMultiplier: 1 },
-  { id: "p200-399",  label: "200-399 Grams",  unitMultiplier: 1 },
-  { id: "p400-999",  label: "400-999 Grams",  unitMultiplier: 1 },
+  { id: "p75-199",   label: "75 - 199 Grams",   unitMultiplier: 1 },
+  { id: "p200-399",  label: "200 - 399 Grams",  unitMultiplier: 1 },
+  { id: "p400-999",  label: "400 - 999 Grams",  unitMultiplier: 1 },
   { id: "p1000",     label: "1000 Grams",       unitMultiplier: 1 }
 ];
 
@@ -219,15 +219,17 @@ select,input[type=password]{width:100%;padding:14px;font-size:16px;border:1px so
 .valctrl{display:flex;align-items:center;gap:6px;flex:none}
 .stepbtn{width:36px;height:36px;flex:none;font-size:19px;font-weight:700;line-height:1;border:1px solid #ccc;border-radius:9px;background:#f5f5f5;color:#1a2b3c;cursor:pointer;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;user-select:none}
 .stepbtn:active{background:#e2e2e2}
-.row input[type=number]{width:58px;flex:none;padding:8px 2px;font-size:15px;border:1px solid #ccc;border-radius:9px;text-align:center;box-sizing:border-box}
+.row input[type=number]{width:78px;flex:none;padding:8px 4px;font-size:15px;border:1px solid #ccc;border-radius:9px;text-align:center;box-sizing:border-box}
+.bulkbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:12px;margin-bottom:4px;border-bottom:1px solid #eef1f4}
+.bulklabel{font-size:12px;font-weight:600;color:#5c6b7a;line-height:1.3}
 .savebtn{width:100%;padding:16px;font-size:17px;font-weight:700;background:#c59a22;color:#fff;border:0;border-radius:12px;cursor:pointer;margin-top:6px}
 .savebtn:disabled{opacity:.6;cursor:default}
 .msg{margin-top:14px;font-weight:700;font-size:14px}
 .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px;border:1px solid #eef1f4}
-table.overview{border-collapse:collapse;width:100%;table-layout:fixed;font-size:11px}
+table.overview{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12px}
 table.overview th,table.overview td{padding:7px 3px;text-align:center;border-bottom:1px solid #eef1f4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 table.overview tr:last-child td{border-bottom:0}
-table.overview th{background:#0b69bf;color:#fff;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+table.overview th{background:#0b69bf;color:#fff;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
 table.overview td:first-child,table.overview th:first-child{width:72px;text-align:left;font-weight:600;color:#164f8e;background:#f8fbfe;padding-left:8px;white-space:normal;overflow-wrap:break-word}
 table.overview th:first-child{background:#0b69bf;color:#fff}
 </style></head><body><div class="wrap">
@@ -252,6 +254,13 @@ table.overview th:first-child{background:#0b69bf;color:#fff}
 <div class="linkurl" id="linkUrl"></div>
 </div>
 <div class="panel">
+<div class="bulkbar">
+<div class="bulklabel">Bulk adjust<br>(all rows except 1st)</div>
+<div class="valctrl">
+<button type="button" class="stepbtn" onclick="bulkStep(-1)">&minus;</button>
+<button type="button" class="stepbtn" onclick="bulkStep(1)">+</button>
+</div>
+</div>
 <div id="rowsWrap">Loading&hellip;</div>
 <button class="savebtn" onclick="save()" type="button">Save Changes</button>
 <div id="msg" class="msg"></div>
@@ -284,7 +293,7 @@ function fmtNum(n){
 // or anything client-facing. This is purely a display helper for this table.
 function fmtOverviewCell(markup){
   var divided = truncate2(Number(markup) / 31.1035);
-  return fmtNum(markup) + "-" + fmtNum(divided);
+  return fmtNum(markup) + " | " + fmtNum(divided);
 }
 
 function renderLinkSelect(){
@@ -301,6 +310,10 @@ function renderRows(){
   document.getElementById("linkUrl").textContent = link ? (STATE.frontendUrl+"/?link="+link.id) : "";
   var wrap = document.getElementById("rowsWrap");
   wrap.innerHTML = "";
+  // Plain label + editable value only - no per-row +/- buttons. Bumping a
+  // value up/down by a small amount is done with the single "Bulk adjust"
+  // control above (which changes every row except the first at once);
+  // editing this box directly changes only this one row's value.
   STATE.products.forEach(function(p){
     var v = (STATE.markups[p.id] && STATE.markups[p.id][currentLinkId] !== undefined) ? STATE.markups[p.id][currentLinkId] : 0;
     var row = document.createElement("div");
@@ -308,41 +321,35 @@ function renderRows(){
     var label = document.createElement("div");
     label.className = "rlabel";
     label.textContent = p.label;
-    var ctrl = document.createElement("div");
-    ctrl.className = "valctrl";
-    var minus = document.createElement("button");
-    minus.type = "button";
-    minus.className = "stepbtn";
-    minus.textContent = "−";
-    minus.addEventListener("click", function(){ stepValue(p.id, -1); });
     var input = document.createElement("input");
     input.type = "number";
     input.step = "0.01";
     input.setAttribute("inputmode", "decimal");
     input.id = "m_" + p.id;
     input.value = v;
-    var plus = document.createElement("button");
-    plus.type = "button";
-    plus.className = "stepbtn";
-    plus.textContent = "+";
-    plus.addEventListener("click", function(){ stepValue(p.id, 1); });
-    ctrl.appendChild(minus);
-    ctrl.appendChild(input);
-    ctrl.appendChild(plus);
     row.appendChild(label);
-    row.appendChild(ctrl);
+    row.appendChild(input);
     wrap.appendChild(row);
   });
   document.getElementById("msg").textContent = "";
 }
 
-function stepValue(id, delta){
-  var el = document.getElementById("m_"+id);
-  if(!el) return;
-  var v = Number(el.value);
-  if(!Number.isFinite(v)) v = 0;
-  v = Math.round((v+delta)*100)/100;
-  el.value = v;
+// Adjusts every product row's CURRENTLY DISPLAYED value (including any
+// unsaved edits already typed in) by delta, except the first row in
+// STATE.products (currently "1 Tael") - pressing + twice raises every
+// other row by 2 from wherever it currently stands. Nothing is saved to
+// the server until "Save Changes" is pressed. Editing a value directly in
+// its box (instead of using these buttons) only ever changes that one row.
+function bulkStep(delta){
+  STATE.products.forEach(function(p, idx){
+    if (idx === 0) return; // skip the first row on purpose
+    var el = document.getElementById("m_"+p.id);
+    if (!el) return;
+    var v = Number(el.value);
+    if (!Number.isFinite(v)) v = 0;
+    v = Math.round((v+delta)*100)/100;
+    el.value = v;
+  });
 }
 
 function renderOverview(){
