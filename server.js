@@ -51,9 +51,9 @@ const MAIN_LINK_ID = "main";
 
 const PRODUCTS = [
   { id: "tael",      label: "1 Tael",           unitMultiplier: 37.429 },
-  { id: "p75-199",   label: "75 - 199 Grams",   unitMultiplier: 1 },
-  { id: "p200-399",  label: "200 - 399 Grams",  unitMultiplier: 1 },
-  { id: "p400-999",  label: "400 - 999 Grams",  unitMultiplier: 1 },
+  { id: "p75-199",   label: "75-199 Grams",   unitMultiplier: 1 },
+  { id: "p200-399",  label: "200-399 Grams",  unitMultiplier: 1 },
+  { id: "p400-999",  label: "400-999 Grams",  unitMultiplier: 1 },
   { id: "p1000",     label: "1000 Grams",       unitMultiplier: 1 }
 ];
 
