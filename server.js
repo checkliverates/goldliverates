@@ -52,23 +52,23 @@ const MAIN_LINK_ID = "main";
 const PRODUCTS = [
   { id: "tael",      label: "1 Tael",           unitMultiplier: 37.429 },
   { id: "p75-199",   label: "75 - 199 Grams",   unitMultiplier: 1 },
-  { id: "p200-399",  label: "200 - 399 Grams",  unitMultiplier: 1 },
-  { id: "p400-999",  label: "400 - 999 Grams",  unitMultiplier: 1 },
-  { id: "p1000",     label: "1000 Grams",       unitMultiplier: 1 }
+  { id: "p200-399",  label: "200 - 399 Grams",  unitMultiplier: 1 }
 ];
 
 const LINKS = [
   { id: "DH1", label: "DH1" },
   { id: "2CT", label: "2CT" },
-  { id: "G3R", label: "G3R" }
+  { id: "G3R", label: "G3R" },
+  { id: "C4F", label: "C4F" },
+  { id: "LM5", label: "LM5" }
 ];
 
 const MARKUPS = {
-  "tael":     { DH1: 20.00, "2CT": 21.00, G3R: 19.00},
-  "p75-199":  { DH1: 17.00, "2CT": 18.00, G3R: 16.00},
-  "p200-399": { DH1: 12.00, "2CT": 13.00, G3R: 11.00},
-  "p400-999": { DH1:  9.00, "2CT": 10.00, G3R:  8.00},
-  "p1000":    { DH1:  5.00, "2CT":  6.00, G3R:  4.00}
+  "tael":     { DH1: 13.00, "2CT": 13.00, G3R: 13.00},
+  "p75-199":  { DH1: 13.00, "2CT": 10.00, G3R:  9.00},
+  "p200-399": { DH1: 11.00, "2CT":  7.00, G3R:  6.00},
+  "p400-999": { DH1:  9.00, "2CT":  5.00, G3R:  3.00},
+  "p1000":    { DH1:  7.00, "2CT":  3.00, G3R:  0.00}
 };
 
 let latest = {
@@ -224,11 +224,11 @@ select,input[type=password]{width:100%;padding:14px;font-size:16px;border:1px so
 .savebtn:disabled{opacity:.6;cursor:default}
 .msg{margin-top:14px;font-weight:700;font-size:14px}
 .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px;border:1px solid #eef1f4}
-table.overview{border-collapse:collapse;width:100%;font-size:12.5px;min-width:380px}
-table.overview th,table.overview td{padding:9px 10px;text-align:center;border-bottom:1px solid #eef1f4;white-space:nowrap}
+table.overview{border-collapse:collapse;width:100%;table-layout:fixed;font-size:11px}
+table.overview th,table.overview td{padding:7px 3px;text-align:center;border-bottom:1px solid #eef1f4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 table.overview tr:last-child td{border-bottom:0}
-table.overview th{background:#0b69bf;color:#fff;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
-table.overview td:first-child,table.overview th:first-child{text-align:left;font-weight:600;color:#164f8e;position:sticky;left:0;background:#f8fbfe}
+table.overview th{background:#0b69bf;color:#fff;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+table.overview td:first-child,table.overview th:first-child{width:72px;text-align:left;font-weight:600;color:#164f8e;background:#f8fbfe;padding-left:8px;white-space:normal;overflow-wrap:break-word}
 table.overview th:first-child{background:#0b69bf;color:#fff}
 </style></head><body><div class="wrap">
 <h1>Markup Settings</h1>
@@ -243,6 +243,10 @@ table.overview th:first-child{background:#0b69bf;color:#fff}
 
 <div id="appPanel" style="display:none">
 <div class="panel">
+<label class="fieldlabel">All Links Overview</label>
+<div class="tablewrap"><table class="overview" id="overviewTable"></table></div>
+</div>
+<div class="panel">
 <label class="fieldlabel" for="linkSelect">Client link</label>
 <select id="linkSelect" onchange="onLinkChange()"></select>
 <div class="linkurl" id="linkUrl"></div>
@@ -251,10 +255,6 @@ table.overview th:first-child{background:#0b69bf;color:#fff}
 <div id="rowsWrap">Loading&hellip;</div>
 <button class="savebtn" onclick="save()" type="button">Save Changes</button>
 <div id="msg" class="msg"></div>
-</div>
-<div class="panel">
-<label class="fieldlabel">All Links Overview</label>
-<div class="tablewrap"><table class="overview" id="overviewTable"></table></div>
 </div>
 </div>
 
@@ -265,6 +265,27 @@ var ADMIN_KEY_VAL = "";
 var currentLinkId = null;
 
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+
+// Truncates (not rounds) to 2 decimals - mirrors the server-side truncate2()
+// used for the real price calculation, so this display-only preview matches
+// the same math style.
+function truncate2(n){ return Math.trunc((n + Number.EPSILON) * 100) / 100; }
+
+// Display formatting only: 13.00 -> "13", 5.50 -> "5.5", 0.41 -> "0.41".
+// Never changes the underlying stored value, just how it's shown here.
+function fmtNum(n){
+  var s = Number(n).toFixed(2);
+  return s.replace(/\.?0+$/, "");
+}
+
+// Overview-table-only preview: shows "<markup> | <markup / 31.1035>" so you
+// can see at a glance what each markup value converts to per-gram, without
+// this touching the real /admin/save payload, the live price calculation,
+// or anything client-facing. This is purely a display helper for this table.
+function fmtOverviewCell(markup){
+  var divided = truncate2(Number(markup) / 31.1035);
+  return fmtNum(markup) + " | " + fmtNum(divided);
+}
 
 function renderLinkSelect(){
   var sel = document.getElementById("linkSelect");
@@ -331,7 +352,7 @@ function renderOverview(){
   var body = STATE.products.map(function(p){
     var cells = STATE.links.map(function(l){
       var v = (STATE.markups[p.id] && STATE.markups[p.id][l.id] !== undefined) ? STATE.markups[p.id][l.id] : 0;
-      return "<td>"+esc(Number(v).toFixed(2))+"</td>";
+      return "<td>"+esc(fmtOverviewCell(v))+"</td>";
     }).join("");
     return "<tr><td>"+esc(p.label)+"</td>"+cells+"</tr>";
   }).join("");
