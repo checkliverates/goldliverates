@@ -51,9 +51,9 @@ const MAIN_LINK_ID = "main";
 
 const PRODUCTS = [
   { id: "tael",      label: "1 Tael",           unitMultiplier: 37.429 },
-  { id: "p75-199",   label: "75 - 199 Grams",   unitMultiplier: 1 },
-  { id: "p200-399",  label: "200 - 399 Grams",  unitMultiplier: 1 },
-  { id: "p400-999",  label: "400 - 999 Grams",  unitMultiplier: 1 },
+  { id: "p75-199",   label: "75-199 Grams",   unitMultiplier: 1 },
+  { id: "p200-399",  label: "200-399 Grams",  unitMultiplier: 1 },
+  { id: "p400-999",  label: "400-999 Grams",  unitMultiplier: 1 },
   { id: "p1000",     label: "1000 Grams",       unitMultiplier: 1 }
 ];
 
@@ -293,7 +293,7 @@ function fmtNum(n){
 // or anything client-facing. This is purely a display helper for this table.
 function fmtOverviewCell(markup){
   var divided = truncate2(Number(markup) / 31.1035);
-  return fmtNum(markup) + " | " + fmtNum(divided);
+  return fmtNum(markup) + " /" + fmtNum(divided);
 }
 
 function renderLinkSelect(){
